@@ -18,9 +18,29 @@ app.autodiscover_tasks(
     related_name = 'async_tasks'
 )
 
-# For cron jobs like cleanup, polling for jobs
-app.conf.beat_schedule = {}
+# For cron jobs like cleanup, etc
+
+# For jobs that run once per day, at midnight
+once_per_day_cronjob = crontab(minute=0, hour=0)
+once_per_minute_cronjob = crontab()
+
+app.conf.beat_schedule = {
+    'persist_local_data': {
+        'task': 'persist_local_data',
+        'schedule': once_per_minute_cronjob,
+        'args': ('Arg to the real test.',)
+    },
+    'dummy_periodic_task': {
+        'task': 'mev.celery_app.test_periodic',
+        'schedule': once_per_minute_cronjob,
+        'args': ('Arg to the dummy test.',)
+    }
+}
 
 @app.task(bind=True)
 def debug_task(self):
     print('Request: {0!r}'.format(self.request))
+
+@app.task
+def test_periodic(arg):
+    print('Dummy periodic task received:', arg)
