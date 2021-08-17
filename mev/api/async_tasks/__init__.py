@@ -1,0 +1,1 @@
+from api.async_tasks.data_persistence import persist_local_data
