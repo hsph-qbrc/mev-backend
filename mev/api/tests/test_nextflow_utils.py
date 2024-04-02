@@ -101,11 +101,14 @@ class NextflowUtilsTester(BaseAPITestCase):
         If a nextflow-based job fails, the report metadata will have a trace that
         we can save/show. Test that the function works as expected
         '''
+        # errorReport has a long message which includes a lot of nextflow-related "fluff"
+        # errorMessage has a more condensed stderr/stdout from the process itself.
         job_metadata = {
             'metadata': {
                 'workflow': {
                     'something': 1,
-                    'errorReport': 'some error'
+                    'errorReport': 'some error',
+                    'errorMessage': 'some error'
                 }
             }
         }

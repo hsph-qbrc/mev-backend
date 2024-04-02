@@ -154,7 +154,7 @@ def get_error_report(job_metadata):
     try:
         report = ('Your job did not successfully complete.'
                   ' Our administrators have been notified.\n')
-        err = job_metadata['metadata']['workflow']['errorReport']
+        err = job_metadata['metadata']['workflow']['errorMessage']
         report += f'The error was: {err}'
         return report
     except KeyError as ex:
