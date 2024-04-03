@@ -136,9 +136,8 @@ class TableResourcePage(Page):
             raise TypeError(
                 'Page indices must be integers or slices, not %s.'
                 % type(index).__name__
-            )
-
-        return self.object_list[index]        
+            )     
+        return self.object_list.iloc[index]
 
 
 class TableResourcePaginator(Paginator):
@@ -289,6 +288,7 @@ class TableResource(DataResource):
                     nrows = PREVIEW_NUM_LINES
                 else:
                     nrows = None
+
                 self.table = reader(
                     resource_instance.datafile.open(),
                     index_col=0, comment='#', nrows=nrows)
@@ -569,12 +569,19 @@ class TableResource(DataResource):
         '''
         pass
 
-    @staticmethod
-    def to_json(df, additional_cols=[]):
+    def to_json(self, content):
         '''
-        Takes the table content (in `df`) and prepares a JSON-compatible
-        data structure. This includes removing any out-of-bounds content
+        Takes the content (either a pd.DataFrame or list of pd.Series)
+        and prepares a JSON-compatible data structure. 
+        This includes removing any out-of-bounds content
         such as NaN (not supported by JSON standard).
+
+        Note that this simply does not simply use self.table since
+        there may have been some alteration to the content we are
+        returning over the API. For example, in a paginated request
+        the paginator selects out the records to return- we only
+        want to convert that content, NOT the whole of the dataframe
+        contained in self.table
 
         Note that `standard_cols` is a list of the columns that are
         located in the original dataframe (as when loaded from a file). 
@@ -584,8 +591,27 @@ class TableResource(DataResource):
         numerical matrix. Those columns aren't part of the original table so 
         we want a way to keep them 'separate' in the returned data payload
         '''
-        if len(additional_cols) > 0:
-            standard_cols = [x for x in df.columns if not x in additional_cols]
+        if type(content) is pd.DataFrame:
+            logger.info('Content was a dataframe. Convert to JSON')
+            df = content
+        elif type(content) is list:
+            try:
+                logger.info('Content was a list. Convert to JSON')
+                df = pd.DataFrame(content)
+            except Exception as ex:
+                logger.error('Failed to convert to pd.DataFrame.'
+                    f' The reason was {ex}')
+                alert_admins('Failed to convert list-based contents to JSON'
+                    ' for a table-based resource.')
+                raise ex
+        else:
+            alert_admins('Failed to convert contents to JSON for a'
+                ' table-based resource. Unexpected content.')
+            raise Exception('The to_json method expects a dataframe or a list of'
+                ' pd.Series which can be coerced into a pd.DataFrame.')
+
+        if len(self.additional_exported_cols) > 0:
+            standard_cols = [x for x in df.columns if not x in self.additional_exported_cols]
         else:
             standard_cols = df.columns
 
@@ -612,8 +638,8 @@ class TableResource(DataResource):
         df = TableResource.replace_special_values(df)
         if df.shape[0] > 0:
             content = df[standard_cols].apply(standard_row_converter, axis=1).tolist()
-            if len(additional_cols) > 0:
-                additional_content = df[additional_cols].apply(
+            if len(self.additional_exported_cols) > 0:
+                additional_content = df[self.additional_exported_cols].apply(
                     additional_row_converter, axis=1).tolist()
                 for x,y in zip(content, additional_content):
                     x.update(y)
@@ -635,9 +661,16 @@ class TableResource(DataResource):
 
             # if there were any filtering params requested, apply those
             self.filter_against_query_params(query_params)
+
+            # permits class-specific (i.e. implemented in child class)
+            # behavior, such as calculating row-wise means, which 
+            # can be made available on numeric tables, for instance.
             self._resource_specific_modifications()
+
             self.perform_sorting(query_params)
-            return TableResource.to_json(self.table, self.additional_exported_cols)
+
+            return self.table
+
         # for these first two exceptions, we already have logged
         # any problems when we called the `read_resource` method
         except ParserNotFoundException as ex:

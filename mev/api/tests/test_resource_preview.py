@@ -103,6 +103,9 @@ class TestResourcePreviewEndpoint(BaseAPITestCase):
 
     @mock.patch('api.views.resource_views.check_resource_request')
     def test_preview_request_for_file_without_preview(self, mock_check_resource_request):
+        # doesn't matter that the file is not a FASTA- just need something here
+        # The key is that we should return prior to even touching the file since
+        # the resource type does not support a preview.
         f = os.path.join(TESTDIR, 'test_integer_matrix.tsv')
         associate_file_with_resource(self.resource, f)
         self.resource.resource_type = FASTA_KEY
@@ -157,10 +160,12 @@ class TestResourcePreview(BaseAPITestCase):
         # check that default of preview=False (no passed preview arg)
         # returns the full 3 lines:
         contents = mtx_type.get_contents(r)
+        contents = mtx_type.to_json(contents)
         self.assertCountEqual(contents, full_file_return)
 
         # with the preview arg, check that we only get two lines back:
         contents = mtx_type.get_contents(r, preview=True)
+        contents = mtx_type.to_json(contents)
         self.assertCountEqual(contents, preview_return)
         os.remove(path)
 
@@ -196,6 +201,8 @@ class TestResourcePreview(BaseAPITestCase):
         # check that default of preview=False (no passed preview arg)
         # returns the full 3 lines:
         contents = bed3_type.get_contents(r)
+        contents = bed3_type.to_json(contents)
+
         full_file_return = [
             {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200}},
             {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340}},
@@ -204,6 +211,7 @@ class TestResourcePreview(BaseAPITestCase):
         self.assertCountEqual(contents, full_file_return)
         # with the preview arg, check that we only get two lines back:
         contents = bed3_type.get_contents(r, preview=True)
+        contents = bed3_type.to_json(contents)
         preview_return = [
             {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200}},
             {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340}}
@@ -229,6 +237,7 @@ class TestResourcePreview(BaseAPITestCase):
         # check that default of preview=False (no passed preview arg)
         # returns the full 3 lines:
         contents = bed6_type.get_contents(r)
+        contents = bed6_type.to_json(contents)
         full_file_return = [
             {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200, 'name':'gA', 'score': 100, 'strand': '.'}},
             {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340, 'name':'gB', 'score': 100, 'strand': '.'}},
@@ -237,6 +246,7 @@ class TestResourcePreview(BaseAPITestCase):
         self.assertCountEqual(contents, full_file_return)
         # with the preview arg, check that we only get two lines back:
         contents = bed6_type.get_contents(r, preview=True)
+        contents = bed6_type.to_json(contents)
         preview_return = [
             {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200, 'name':'gA', 'score': 100, 'strand': '.'}},
             {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340, 'name':'gB', 'score': 100, 'strand': '.'}}
@@ -262,6 +272,7 @@ class TestResourcePreview(BaseAPITestCase):
         # check that default of preview=False (no passed preview arg)
         # returns the full 3 lines:
         contents = np_type.get_contents(r)
+        contents = np_type.to_json(contents)
         full_file_return = [
             {
                 'rowname': 0, 
@@ -312,6 +323,7 @@ class TestResourcePreview(BaseAPITestCase):
         self.assertCountEqual(contents, full_file_return)
         # with the preview arg, check that we only get two lines back:
         contents = np_type.get_contents(r, preview=True)
+        contents = np_type.to_json(contents)
         preview_return = [
             {
                 'rowname': 0, 

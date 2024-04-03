@@ -17,10 +17,10 @@ from exceptions import NonIterableContentsException, \
 from api.models import Resource
 from api.serializers.resource import ResourceSerializer
 import api.permissions as api_permissions
-from api.utilities.resource_utilities import get_resource_view, \
-    get_resource_paginator, \
-    resource_supports_pagination, \
+from api.utilities.resource_utilities import resource_supports_pagination, \
     check_resource_request_validity
+
+from resource_types import get_resource_type_instance
 from api.data_transformations import get_transformation_function
 from api.async_tasks.async_resource_tasks import \
     delete_file as async_delete_file
@@ -171,7 +171,8 @@ class ResourceContents(APIView):
 
         # requester can access, resource is active.  Go get contents
         try:
-            contents = get_resource_view(r, request.query_params)
+            resource_type = get_resource_type_instance(r.resource_type)
+            contents = resource_type.get_contents(r, request.query_params)
             logger.info('Done getting contents.')
         except ParseException as ex:
             return Response(
@@ -193,7 +194,8 @@ class ResourceContents(APIView):
         else:
             if (settings.PAGE_PARAM in request.query_params) and \
                 (resource_supports_pagination(r.resource_type)):
-                paginator = get_resource_paginator(r.resource_type)
+
+                paginator = resource_type.get_paginator()
                 try:
                     results = paginator.paginate_queryset(contents, request)
                 except NonIterableContentsException as ex:
@@ -205,8 +207,10 @@ class ResourceContents(APIView):
                         ' not iterable. Returning all contents.'
                     )
                     return Response(contents)
+                results = resource_type.to_json(results)
                 return paginator.get_paginated_response(results)
             else:
+                contents = resource_type.to_json(contents)
                 return Response(contents)
 
 
@@ -232,10 +236,10 @@ class ResourcePreview(APIView):
         if not valid_request:
             # if the request was not valid, then `r` is a Response object.
             return r
-
         # requester can access, resource is active.  Go get contents
         try:
-            contents = get_resource_view(r, {}, preview=True)
+            resource_type = get_resource_type_instance(r.resource_type)
+            contents = resource_type.get_contents(r, request.query_params, preview=True)
         except Exception as ex:
             return Response(
                 {'error': 'Experienced an issue when preparing'
@@ -248,6 +252,7 @@ class ResourcePreview(APIView):
                 status=status.HTTP_200_OK
             )
         else:
+            contents = resource_type.to_json(contents)
             return Response(contents)
 
 

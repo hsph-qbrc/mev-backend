@@ -49,7 +49,6 @@ from api.utilities.resource_utilities import initiate_resource_validation, \
     retrieve_resource_class_instance, \
     check_resource_request_validity, \
     delete_resource_by_pk, \
-    get_resource_view, \
     retrieve_metadata, \
     retrieve_resource_class_standard_format, \
     check_if_resource_unset
@@ -209,53 +208,6 @@ class TestResourceUtilities(BaseAPITestCase):
         mock_get_standard_format.side_effect = KeyError('abc!')
         with self.assertRaisesRegex(Exception, mock_type):
             retrieve_resource_class_standard_format(mock_type)
-
-    @mock.patch('resource_types.RESOURCE_MAPPING')
-    def test_resource_preview_for_valid_resource_type(self, mock_resource_mapping):
-        '''
-        Tests that a proper preview dict is returned.  Mocks out the 
-        method that does the reading of the resource path.
-        '''
-        all_resources = Resource.objects.all()
-        resource = None
-        for r in all_resources:
-            if r.resource_type:
-                resource = r
-                break
-        if not resource:
-            raise ImproperlyConfigured('Need at least one resource with'
-                ' a specified resource_type to run this test.'
-            )
-
-        expected_dict = {'a': 1, 'b':2}
-
-        class mock_resource_type_class(object):
-            def get_contents(self, resource, query_params={}, preview=False):
-                return expected_dict
-
-        mock_resource_mapping.__getitem__.return_value = mock_resource_type_class
-        preview_dict = get_resource_view(r)
-        self.assertDictEqual(expected_dict, preview_dict)
-
-
-    def test_resource_preview_for_null_resource_type(self):
-        '''
-        Tests that a proper preview dict is returned.  Mocks out the 
-        method that does the reading of the resource path.
-        '''
-        all_resources = Resource.objects.all()
-        resource = None
-        for r in all_resources:
-            if r.resource_type is None:
-                resource = r
-                break
-        if not resource:
-            raise ImproperlyConfigured('Need at least one resource without'
-                ' a specified resource_type to run this test.'
-            )
-
-        preview_dict = get_resource_view(r)
-        self.assertIsNone(preview_dict)
 
     @mock.patch('api.utilities.resource_utilities.retrieve_resource_class_instance')
     @mock.patch('api.utilities.resource_utilities.handle_invalid_resource')

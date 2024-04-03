@@ -31,7 +31,6 @@ def perform_clustering(df, method, metric, resource_type_instance):
     in the scipy world, ROWS of a matrix are observations. Our convention (based
     on expression matrices) is to have observations in columns.
     '''
-
     # if we only have a single item or empty dataframe, just return
     if (len(df.shape) == 1) or (df.shape[0] < 2):
         return resource_type_instance.to_json(df)
@@ -103,8 +102,7 @@ def heatmap_reduce(resource, query_params):
         raise Exception('Not an acceptable resource type for this function.')
 
     resource_type_instance = get_resource_type_instance(resource.resource_type)
-    resource_type_instance.read_resource(resource, resource.file_format)
-    df = resource_type_instance.table
+    df = resource_type_instance.get_contents(resource)
     try:
         mad_values = median_abs_deviation(df, axis=1)
     except:

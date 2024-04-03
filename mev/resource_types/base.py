@@ -35,6 +35,10 @@ class DataResource(object):
     def extract_metadata(self, resource_instance, parent_op_pk=None):
         raise NotImplementedError('You must'
         ' implement this method in the derived class')
+
+    def to_json(self, content):
+        raise NotImplementedError('You must'
+        ' implement this method in the derived class')
         
     @staticmethod
     def get_file_extension(path):

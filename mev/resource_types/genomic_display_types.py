@@ -26,6 +26,9 @@ class WigFileResource(DataResource):
             self.metadata[PARENT_OP_KEY] = parent_op_pk
         return self.metadata
 
+    def get_contents(self, resource_instance, query_params={}, preview=False):
+        return None
+
 
 class BigWigFileResource(DataResource):
 
@@ -49,6 +52,9 @@ class BigWigFileResource(DataResource):
             self.metadata[PARENT_OP_KEY] = parent_op_pk
         return self.metadata
 
+    def get_contents(self, resource_instance, query_params={}, preview=False):
+        return None
+
 
 class BedGraphFileResource(DataResource):
 
@@ -71,3 +77,6 @@ class BedGraphFileResource(DataResource):
         if parent_op_pk:
             self.metadata[PARENT_OP_KEY] = parent_op_pk
         return self.metadata
+
+    def get_contents(self, resource_instance, query_params={}, preview=False):
+        return None

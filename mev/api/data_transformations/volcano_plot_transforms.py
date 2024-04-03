@@ -58,8 +58,7 @@ def volcano_subset(resource, query_params):
         raise Exception('Not an acceptable resource type for this function.')
 
     resource_type_instance = get_resource_type_instance(resource.resource_type)
-    resource_type_instance.read_resource(resource, resource.file_format)
-    df = resource_type_instance.table
+    df = resource_type_instance.get_contents(resource)
 
     # there MUST be padj and log2FoldChange columns to filter on
     required_cols = ['padj','log2FoldChange']
