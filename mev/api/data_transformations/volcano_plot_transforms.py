@@ -7,7 +7,8 @@ from constants import FEATURE_TABLE_KEY, \
     POSITIVE_INF_MARKER, \
     NEGATIVE_INF_MARKER
 from data_structures.attribute_types import PositiveFloatAttribute, \
-    BoundedFloatAttribute
+    BoundedFloatAttribute, \
+    PositiveIntegerAttribute
 
 from resource_types import get_resource_type_instance
 
@@ -51,6 +52,15 @@ def volcano_subset(resource, query_params):
         raise Exception('The parameter "fraction" could not be'
                         ' parsed as a positive float between zero and 1.')
 
+    try:
+        nmax = PositiveIntegerAttribute(int(query_params['nmax']))
+        nmax = nmax.value
+    except KeyError:
+        nmax = 3000
+    except Exception:
+        raise Exception('The parameter "nmax" could not be'
+                        ' parsed as a positive integer.')
+
     acceptable_resource_types = [
         FEATURE_TABLE_KEY
     ]
@@ -69,7 +79,13 @@ def volcano_subset(resource, query_params):
     pval_pass = df['padj'] <= p
     lfc_pass = df['log2FoldChange'].apply(lambda x: np.abs(x) >= lfc)
     interesting = pval_pass & lfc_pass
-    interesting_subset = df.loc[interesting]
+
+    # can only use the 'sample' method with a number that is smaller
+    # than the total size. If nmax exceeds the number of interesting
+    # hits, then simply return all the hits
+    if interesting.shape[0] < nmax:
+        nmax = interesting.shape[0]
+    interesting_subset = df.loc[interesting].sample(n=nmax)
     unintersting_subset = df.loc[~interesting].sample(frac=c)
     final_df = pd.concat([interesting_subset, unintersting_subset], axis=0)
     return resource_type_instance.to_json(final_df)
