@@ -161,6 +161,5 @@ def heatmap_cluster(resource, query_params):
     # Note that the following method returns a json-format data structure
     # since it's typically used by a view. However, we use it to populate
     # an attribute on the instance which has the underlying dataframe
-    resource_type_instance.get_contents(resource, qp)
-    df = resource_type_instance.table
+    df = resource_type_instance.get_contents(resource, qp)
     return perform_clustering(df, method, metric, resource_type_instance)
