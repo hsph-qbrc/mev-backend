@@ -83,8 +83,8 @@ def volcano_subset(resource, query_params):
     # can only use the 'sample' method with a number that is smaller
     # than the total size. If nmax exceeds the number of interesting
     # hits, then simply return all the hits
-    if interesting.shape[0] < nmax:
-        nmax = interesting.shape[0]
+    if interesting.sum() < nmax:
+        nmax = interesting.sum()
     interesting_subset = df.loc[interesting].sample(n=nmax)
     unintersting_subset = df.loc[~interesting].sample(frac=c)
     final_df = pd.concat([interesting_subset, unintersting_subset], axis=0)
