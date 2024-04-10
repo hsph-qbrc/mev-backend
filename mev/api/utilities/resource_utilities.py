@@ -20,8 +20,7 @@ from api.models import Resource, \
 from api.serializers.resource_metadata import ResourceMetadataSerializer
 from .basic_utils import make_local_directory
 
-from resource_types import get_contents, \
-    get_resource_paginator as _get_resource_paginator, \
+from resource_types import get_resource_paginator as _get_resource_paginator, \
     format_is_acceptable_for_type, \
     resource_supports_pagination as _resource_supports_pagination, \
     get_acceptable_formats, \

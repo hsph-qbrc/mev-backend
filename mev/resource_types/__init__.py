@@ -128,36 +128,6 @@ def get_standard_format(resource_type_str):
     return rtc.STANDARD_FORMAT
 
 
-def get_contents(resource_instance, query_params={}, preview=False):
-    '''
-    Returns a "view" of the data underlying a Resource. The actual
-    implementation of that view is prepared by the class corresponding
-    to the resource type. 
-
-    Note that to use properly with pagination, the returned object must support
-    bracketed indexing (e.g. x[10:24]) and len() (and possibly other methods).
-    We use the django.core.paginator.Paginator class, which expects 'list-like'
-    arguments to be provided.
-
-    If preview=True, then a small subset of the data is returned
-    '''
-
-    # The resource type is the shorthand identifier.
-    # To get the actual resource class implementation, we 
-    # use the RESOURCE_MAPPING dict
-    try:
-        resource_class = RESOURCE_MAPPING[resource_instance.resource_type]
-    except KeyError as ex:
-        logger.error('Received a Resource that had a non-null resource_type'
-            ' but was also not in the known resource types.'
-        )
-        return {'error': 'No contents available'}
-        
-    # instantiate the proper class for this type:
-    resource_type = resource_class()
-    return resource_type.get_contents(resource_instance, query_params, preview=preview)
-
-
 def get_resource_paginator(resource_type_str):
     '''
     Returns a subclass of the django.core.paginator.Paginator class which 
