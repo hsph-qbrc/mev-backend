@@ -12,6 +12,7 @@ from django.core.files import File
 
 from api.models import Resource, Workspace
 from constants import DATABASE_RESOURCE_TYPES, \
+    FASTQ_KEY, \
     FEATURE_TABLE_KEY, \
     INTEGER_MATRIX_KEY, \
     JSON_FILE_KEY, \
@@ -265,14 +266,18 @@ class ResourceContentTests(BaseAPITestCase):
 
 
     @mock.patch('api.views.resource_views.check_resource_request')
-    @mock.patch('api.views.resource_views.get_resource_view')
-    def test_error_reported(self, mock_view, mock_check_resource_request):
+    @mock.patch('api.views.resource_views.get_resource_type_instance')
+    def test_error_reported(self,
+            mock_get_resource_type_instance,
+            mock_check_resource_request):
         '''
         If there was some error in preparing the preview, 
         the returned data will have an 'error' key
         '''
         mock_check_resource_request.return_value = (True, self.resource)
-        mock_view.side_effect = Exception('something bad happened!')
+        mock_resource_type = mock.MagicMock()
+        mock_resource_type.get_contents.side_effect = Exception('something bad happened!')
+        mock_get_resource_type_instance.return_value = mock_resource_type
         response = self.authenticated_regular_client.get(
             self.url, format='json'
         )
@@ -280,6 +285,27 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_500_INTERNAL_SERVER_ERROR)   
 
         self.assertTrue('error' in response.json())     
+
+    @mock.patch('api.views.resource_views.check_resource_request')
+    @mock.patch('api.utilities.resource_utilities.localize_resource')
+    def test_contents_for_resource_without_view(self, mock_localize_resource, mock_check_resource_request):
+        '''
+        Test that resources which don't allow content access (e.g. large FASTQ files)
+        return a 200 and state that contents are not available for the resource
+        '''
+        # the actual file doesn't matter so we don't have to associate
+        self.resource.resource_type = FASTQ_KEY
+        self.resource.file_format = TSV_FORMAT
+        self.resource.save()
+        mock_check_resource_request.return_value = (True, self.resource)
+
+        response = self.authenticated_regular_client.get(
+            self.url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_200_OK)
+        j = response.json()
+        self.assertTrue('info' in j)
 
     @mock.patch('api.views.resource_views.check_resource_request')
     @mock.patch('api.utilities.resource_utilities.localize_resource')
@@ -1401,7 +1427,6 @@ class ResourceContentTests(BaseAPITestCase):
             expected_ordering
         )
 
-
     @mock.patch('api.views.resource_views.check_resource_request')
     def test_matrix_specific_content_requests(self, mock_check_resource_request):
         '''
@@ -1427,6 +1452,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 12)
+        self.assertTrue(type(results) is list)
         self.assertFalse(any(['__rowmean__' in x for x in results]))
         
         # add on a rowmeans query without any 'value'. This should be valid.
@@ -1554,7 +1580,19 @@ class ResourceContentTests(BaseAPITestCase):
         )
         self.assertEqual(response.status_code, 
             status.HTTP_200_OK)
-        results = response.json()['results']
+        payload = response.json()
+        # if the response is paginated, then it would have these keywords:
+        paginated_keywords = [
+            'previous',
+            'next',
+            'count',
+            'results'
+        ]
+        for kw in paginated_keywords:
+            self.assertTrue(kw in payload.keys())
+
+        # now get the actual results from that payload
+        results = payload['results']
         self.assertTrue(len(results) == 10)
         expected_genes = ['g%d' % i for i in range(2,12)]
         returned_genes = [x['rowname'] for x in results]

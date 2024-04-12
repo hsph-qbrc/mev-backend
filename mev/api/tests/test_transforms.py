@@ -58,8 +58,12 @@ class ResourceTransformTests(BaseAPITestCase):
         Tests the clustering function on the entire matrix
         '''
         fp = os.path.join(self.TESTDIR, 'heatmap_hcl_test.tsv')
-        df = pd.read_table(fp, index_col=0)
+        self.resource.resource_type = MATRIX_KEY
+        self.resource.file_format = TSV_FORMAT
+        self.resource.save()
+        associate_file_with_resource(self.resource, fp)
         resource_type_instance = get_resource_type_instance(MATRIX_KEY)
+        df = resource_type_instance.get_contents(self.resource)
         result = perform_clustering(df, 'ward', 'euclidean', resource_type_instance)
         expected_row_ordering = ['g5','g1','g3','g6','g2','g4']
         self.assertEqual(expected_row_ordering, [x['rowname'] for x in result])

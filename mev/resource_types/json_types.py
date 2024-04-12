@@ -102,6 +102,13 @@ class JsonResource(DataResource):
     def get_paginator():
         return JsonResourcePageNumberPagination()
 
+    def to_json(self, content):
+        '''
+        Since this resource class already handles JSON
+        data, this is trivial.
+        '''
+        return content
+
     def performs_validation(self):
         '''
         Since we have methods to validate JSON-based DataResource types, we 

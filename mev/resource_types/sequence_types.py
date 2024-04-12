@@ -47,6 +47,12 @@ class SequenceResource(DataResource):
             self.metadata[PARENT_OP_KEY] = parent_op_pk
         return self.metadata
 
+    def get_contents(self, resource_instance, query_params={}, preview=False):
+        '''
+        By default, we do not view sequence types via the API, so return `None`
+        '''
+        return None
+
 class FastAResource(SequenceResource):
     '''
     This type is for compressed Fasta files

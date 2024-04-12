@@ -20,8 +20,7 @@ from api.models import Resource, \
 from api.serializers.resource_metadata import ResourceMetadataSerializer
 from .basic_utils import make_local_directory
 
-from resource_types import get_contents, \
-    get_resource_paginator as _get_resource_paginator, \
+from resource_types import get_resource_paginator as _get_resource_paginator, \
     format_is_acceptable_for_type, \
     resource_supports_pagination as _resource_supports_pagination, \
     get_acceptable_formats, \
@@ -120,30 +119,6 @@ def set_resource_to_inactive(resource_instance):
     resource_instance.is_active = False
     resource_instance.save()
 
-
-def get_resource_view(resource_instance, query_params={}, preview=False):
-    '''
-    Returns a "view" of the resource_instance in JSON-format.
-
-    Only valid for certain resource types and assumes
-    that the resource is active. 
-
-    If preview=True, only retrieve a subset of the data
-    '''
-    logger.info('Retrieving data view for resource: {resource}.'.format(
-        resource=resource_instance
-    ))
-
-    if not resource_instance.resource_type:
-        logger.info('No resource type was known for resource: {resource}.'.format(
-            resource = resource_instance
-        ))
-        return
-    if RESOURCE_MAPPING[resource_instance.resource_type] in RESOURCE_TYPES_WITHOUT_CONTENTS_VIEW:
-        # prevents us from pulling remote resources if we can't view the contents anyway
-        return None
-    else:
-        return get_contents(resource_instance, query_params, preview=preview)
 
 def get_resource_paginator(resource_type):
     '''
