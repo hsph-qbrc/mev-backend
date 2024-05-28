@@ -7,7 +7,7 @@ chmod=0770                       ; socket file mode (default 0700)
 [supervisord]
 logfile=/tmp/supervisord.log ; (main log file;default $CWD/supervisord.log)
 pidfile=/tmp/supervisord.pid ; (supervisord pidfile;default supervisord.pid)
-childlogdir=/tmp/supervisor            ; ('AUTO' child log dir, default $TEMP)
+childlogdir=/var/log/supervisor            ; ('AUTO' child log dir, default $TEMP)
 user=<%= $mevapi::app_user %>
 environment = DJANGO_SETTINGS_MODULE="<%= $mevapi::django_settings_module %>"
 

@@ -15,12 +15,6 @@ class mevapi::supervisor () {
     "${conf_dir}/conf.d/celery_worker.conf":
       content => epp('mevapi/supervisor/celery_worker.conf.epp'),;
   }
-  ->
-  file { '/tmp/supervisor':
-    ensure => directory,
-    owner  => $mevapi::app_user,
-    group  => $mevapi::app_group,
-  }
   ~>
   service { 'supervisor':
     ensure => running,
