@@ -94,6 +94,19 @@ Note the following assumptions, based on the terraform plan:
 
 If you wish to redeploy, we have the option of restoring state via `data_volume_snapshot_id` (for using a snapshot as our EBS "data volume") and `database_snapshot`. If those are not specified in your `tfvars`, they default to `null`, which means Terraform will create a new data volume and/or RDS instance.
 
+## Notes on system alarms and rebooting the main server
+
+Note that excessive RAM consumption can cause the main EC2 instance to enter an "alarm" state. In this case, the backend ceases to be responsive to requests. The EC2 console will report that a system reachability check has failed and needs to be rebooted. Select the main server instance and choose "reboot" from the "instance state" menu.
+
+Once the machine is rebooted, connect to that machine (`aws ssm start-session --target <instance ID>`)and run `mkdir /tmp/supervisor`. Without that directory, the application server never comes online since Supervisor is expecting that directory to exist. After a bit (i.e. no action required other than creating that directory), if you run `supervisorctl status`, you should see:
+
+```
+celery_beat                      RUNNING   pid 1524, uptime 0:06:41
+celery_worker                    RUNNING   pid 1523, uptime 0:06:41
+gunicorn                         RUNNING   pid 1525, uptime 0:06:41
+```
+(note the status might be `STARTING` if you run that check too quickly. )
+
 ## Incorporating Globus
 
 If you wish to incorporate Globus into WebMeV, see the [Globus setup instructions](./globus_setup.md)
