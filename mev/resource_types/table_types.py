@@ -60,6 +60,9 @@ NON_NUMERIC_ERROR = 'Some of your columns contained non-numeric entries. Please 
 
 NON_INTEGER_ERROR = 'Some of your columns contained non-integer entries. Please check the file.'
 
+NEGATIVE_COUNTS_ERROR = ('Some of your entries were negative and this is not'
+    ' permitted for this resource type. Please check the file.')
+
 TRIVIAL_TABLE_ERROR = ('The file contained only a single column'
     ' which provided an index.  No data was provided in additional columns.')
 
@@ -1036,16 +1039,34 @@ class IntegerMatrix(Matrix):
 
 class RnaSeqCountMatrix(IntegerMatrix):
     '''
-    A very-explicit class (mainly for making things user-friendly)
-    where we provide specialized behavior/messages specific to count matrices
-    generated from RNA-seq data. The same as an integer matrix, but named to be
-    suggestive for WebMEV users.
+    A very-explicit class which extends the IntegerMatrix to PREVENT
+    negative counts
     '''
     DESCRIPTION = 'A table of integer-based counts corresponding to'\
         ' the number of sequencing reads associated with a particular' \
-        ' gene or transcript.'
+        ' gene or transcript. Note that all counts must be greater than or' \
+        ' equal to zero-- negative numbers are not permitted.'
 
     EXAMPLE = IntegerMatrix.EXAMPLE
+
+    def validate_type(self, resource_instance, file_format):
+        '''
+        Asserts that we don't allow negatives. Extends all the 
+        other requirements of an IntegerMatrix
+        '''
+        is_valid, error_message = super().validate_type(resource_instance, file_format)
+        
+        if not is_valid:
+            return (False, error_message)
+
+        # if here, we had a valid InterMatrix. Now assert all entries are positive.
+        # Double sum since the first sum will return a pd.Series of column sums.
+        # As of writing, no way to reduce over both axes simultaneously.
+        if (self.table < 0).sum().sum() > 0:
+            return (False, NEGATIVE_COUNTS_ERROR)
+
+        # all good!
+        return (True, None)
 
 
 class Network(Matrix):

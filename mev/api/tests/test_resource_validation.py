@@ -18,6 +18,7 @@ from api.models import Resource
 from resource_types.table_types import TableResource, \
     Matrix, \
     IntegerMatrix, \
+    RnaSeqCountMatrix, \
     Network, \
     AnnotationTable, \
     BED3File, \
@@ -560,6 +561,16 @@ class TestIntegerMatrix(BaseAPITestCase):
         is_valid, err = m.validate_type(self.r, CSV_FORMAT)
         self.assertFalse(is_valid)
 
+    def test_permits_negative_numbers(self):
+        '''
+        Test that the IntegerMatrix permits negative numbers.
+        '''
+        m = IntegerMatrix()
+        associate_file_with_resource(self.r, os.path.join(
+            TESTDIR, 'test_integer_matrix.with_negative.tsv'))
+        is_valid, err = m.validate_type(self.r, TSV_FORMAT)
+        self.assertTrue(is_valid)
+
     def test_fails_parsing_int_table_with_na_and_float(self):
         '''
         Here, we take a NaN value which would be typically handled
@@ -631,6 +642,42 @@ class TestIntegerMatrix(BaseAPITestCase):
         is_valid, err = m.validate_type(self.r, TSV_FORMAT)
         self.assertFalse(is_valid)
 
+class TestRnaSeqCountMatrix(BaseAPITestCase):
+    '''
+    Tests the specific behavior of RNA-seq count matrices
+    which extend those of the integer matrix
+    '''
+
+    def setUp(self):
+        self.establish_clients()
+        self.r = Resource.objects.create(
+            owner=self.regular_user_1,
+            file_format='',
+            resource_type='',
+            datafile=File(BytesIO(), 'foo.tsv')
+        )
+
+    def test_validates_properly(self):
+        '''
+        Capable of parsing a table of integers
+        '''
+        m = RnaSeqCountMatrix()
+        associate_file_with_resource(self.r, os.path.join(
+            TESTDIR, 'test_integer_matrix.tsv'))
+        is_valid, err = m.validate_type(self.r, TSV_FORMAT)
+        print(err)
+        self.assertTrue(is_valid)
+
+    def test_fails_with_negative(self):
+        '''
+        Reports an error when parsing an integer table with 
+        a negative entry
+        '''
+        m = RnaSeqCountMatrix()
+        associate_file_with_resource(self.r, os.path.join(
+            TESTDIR, 'test_integer_matrix.with_negative.tsv'))
+        is_valid, err = m.validate_type(self.r, TSV_FORMAT)
+        self.assertFalse(is_valid)
 
 class TestAnnotationMatrix(BaseAPITestCase):
 
