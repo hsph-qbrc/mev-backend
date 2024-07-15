@@ -343,7 +343,7 @@ MAX_DOWNLOAD_SIZE_BYTES = 512 * 1000 * 1000
 
 if STORAGE_LOCATION == REMOTE:
     if CLOUD_PLATFORM == AMAZON:
-        DEFAULT_FILE_STORAGE = 'api.storage.S3ResourceStorage'
+        FILE_STORAGE_BACKEND = 'api.storage.S3ResourceStorage'
         # note that django storages makes use of these settings:
         AWS_S3_SIGNATURE_VERSION = 's3v4'
         AWS_S3_REGION_NAME = get_env('AWS_REGION')
@@ -361,8 +361,17 @@ else: # local storage
     # An example would be localization of files for use in Docker containers.
     # Rather than checking to see if storage is local or remote, we provide
     # a "dumb" localization method
-    DEFAULT_FILE_STORAGE = 'api.storage.LocalResourceStorage'
+    FILE_STORAGE_BACKEND = 'api.storage.LocalResourceStorage'
     MEDIA_ROOT = RESOURCE_CACHE_DIR
+
+STORAGES = {
+    "default": {
+        "BACKEND": FILE_STORAGE_BACKEND,
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 ###############################################################################
 # END Parameters for configuring resource storage
