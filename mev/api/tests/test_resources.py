@@ -1054,6 +1054,120 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertCountEqual(returned_genes, selected_genes[:2])
 
     @mock.patch('api.views.resource_views.check_resource_request')
+    def test_resource_contents_column_filter(self, mock_check_resource_request):
+        '''
+        We allow filtering of tables by the column names. Test that
+        the implementation works as expected
+        '''
+        f = os.path.join(self.TESTDIR, 'demo_table_for_pagination.tsv')
+        N = 155 # the number of records in our demo file
+
+        associate_file_with_resource(self.resource, f)
+        self.resource.resource_type = MATRIX_KEY
+        self.resource.file_format = TSV_FORMAT
+        self.resource.save()
+        mock_check_resource_request.return_value = (True, self.resource)
+
+        # the base url (no query params) should return all the records
+        base_url = reverse(
+            'resource-contents', 
+            kwargs={'pk':self.resource.pk}
+        )
+        response = self.authenticated_regular_client.get(
+            base_url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_200_OK)
+        results = response.json()
+        self.assertTrue(len(results) == N)
+        first_record = results[0]
+        final_record = results[-1]
+        self.assertTrue(first_record['rowname'] == 'g0')
+        self.assertTrue(final_record['rowname'] == 'g154')
+
+        # the columns are named S1 through S6 
+        # try some column name filters:
+        selected_cols = ['S2', 'S4', 'S6']
+        suffix = '?__colname__=[in]:{s}'.format(s=','.join(selected_cols))
+        url = base_url + suffix
+        response = self.authenticated_regular_client.get(
+            url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_200_OK)
+        j = response.json()
+
+        # check that we got all rows since we didn't filter on rows
+        self.assertTrue(len(j) == N)
+
+        # check that the entries contain only S2,S4,S6 per our column filter
+        first_record = j[0]
+        returned_vals = first_record['values'].keys()
+        self.assertCountEqual(returned_vals, selected_cols)
+
+        # filter for a single column:
+        selected_col = 'S3'
+        suffix = f'?__colname__=[eq]:{selected_col}'
+        url = base_url + suffix
+        response = self.authenticated_regular_client.get(
+            url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_200_OK)
+        j = response.json()
+
+        # check that we got all rows since we didn't filter on rows
+        self.assertTrue(len(j) == N)
+
+        # check that the entries contain only S3 per our column filter
+        first_record = j[0]
+        returned_vals = list(first_record['values'].keys())
+        self.assertTrue(len(returned_vals) == 1)
+        self.assertEqual(returned_vals[0], selected_col)
+
+        # Should return error an empty result.
+        selected_col = 'S333'
+        suffix = f'?__colname__=[eq]:{selected_col}'
+        url = base_url + suffix
+        response = self.authenticated_regular_client.get(
+            url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_200_OK)
+        j = response.json()
+        self.assertTrue(len(j) == 0)
+
+        # use a different operation (othan 'equality' or 'contains') 
+        # to see that it errors with a helpful response
+        suffix = f'?__colname__=[lt]:S3'
+        url = base_url + suffix
+        response = self.authenticated_regular_client.get(
+            url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_400_BAD_REQUEST)
+
+        selected_cols = ['S2', 'S4', 'S6']
+        selected_genes = ['g8', 'g68']
+        suffix = '?__colname__=[in]:{s}'.format(s=','.join(selected_cols))
+        suffix += '&__rowname__=[in]:{s}'.format(s=','.join(selected_genes))
+        url = base_url + suffix
+        response = self.authenticated_regular_client.get(
+            url, format='json'
+        )
+        self.assertEqual(response.status_code, 
+            status.HTTP_200_OK)
+        j = response.json()
+        print(json.dumps(j, indent=2))
+        self.assertTrue(len(j) == 2)
+        returned_genes = [x['rowname'] for x in j]
+        self.assertCountEqual(returned_genes, selected_genes)
+                
+        first_record = j[0]
+        returned_vals = first_record['values'].keys()
+        self.assertCountEqual(returned_vals, selected_cols)
+
+    @mock.patch('api.views.resource_views.check_resource_request')
     def test_resource_contents_table_filter(self, mock_check_resource_request):
         '''
         For testing if table-based resources are filtered correctly

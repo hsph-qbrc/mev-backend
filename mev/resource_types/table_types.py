@@ -519,6 +519,25 @@ class TableResource(DataResource):
                     raise ParseException('Error encountered with filter on rows.'
                         ' Admin has been notified.'
                     )
+            elif k == settings.COLNAME_FILTER:
+                if len(split_v) != 2:
+                    raise ParseException('The query for filtering on the columns'
+                        ' was not properly formatted. It should be [<op>]:<value>')
+                # the name of the operation. For column name filtering, we 
+                # only allow strict equals (single column) or 
+                # 'is in' (for getting >=1 columns)
+                op_name = split_v[0] 
+                if not op_name in [settings.IS_IN, settings.EQUAL_TO]:
+                    raise ParseException('When filtering on columns, we only'
+                        f' accept strict equality ({settings.EQUAL_TO}) to'
+                        f' get a single column or {settings.IS_IN} to get'
+                        'multiple columns.'
+                    )
+                val = split_v[1]
+                op = settings.OPERATOR_MAPPING[op_name]
+                colname_filter = self.table.columns.to_series().apply(lambda x: op(x, val))
+                self.table = self.table.loc[:, colname_filter]
+
             elif k in self.IGNORED_QUERY_PARAMS:
                 # need to have this here or else the 'ignored' query params
                 # are treated as unknown columns to sort on in the `else` statement
@@ -639,7 +658,7 @@ class TableResource(DataResource):
             return d
 
         df = TableResource.replace_special_values(df)
-        if df.shape[0] > 0:
+        if not df.empty:
             content = df[standard_cols].apply(standard_row_converter, axis=1).tolist()
             if len(self.additional_exported_cols) > 0:
                 additional_content = df[self.additional_exported_cols].apply(

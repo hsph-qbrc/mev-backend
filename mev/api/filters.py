@@ -10,6 +10,9 @@ SORTING_OPTIONS = [ASCENDING, DESCENDING]
 # A special filter option for specifying a filter on the row names
 ROWNAME_FILTER = '__rowname__'
 
+# A special filter option for specifying a filter on the columns
+COLNAME_FILTER = '__colname__'
+
 # for query filter params:
 # When providing query filters, we will have something like:
 # <url>/?paramA=<comparison>:<val>, 
