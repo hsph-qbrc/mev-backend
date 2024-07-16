@@ -368,6 +368,9 @@ STORAGES = {
     "default": {
         "BACKEND": FILE_STORAGE_BACKEND,
     },
+    "local": {
+        "BACKEND": "api.storage.LocalResourceStorage"
+    },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },

@@ -9,7 +9,8 @@ import botocore
 from storages.backends.s3boto3 import S3Boto3Storage
 from django.conf import settings
 from django.core.files import File
-from django.core.files.storage import FileSystemStorage
+from django.core.files.storage import FileSystemStorage, \
+    storages
 
 from exceptions import StorageException
 
@@ -66,9 +67,50 @@ class LocalResourceStorage(FileSystemStorage):
 class S3ResourceStorage(S3Boto3Storage):
     bucket_name = settings.MEDIA_ROOT
 
-    # This will append random chars to the end of the object name
+    # If True, this will append random chars to the end of the object name
     # so that files are not overwritten
-    file_overwite = False
+    file_overwrite = False
+
+    def _get_local_storage(self):
+        return storages['local']
+
+    def _open(self, name, mode="rb"):
+        '''
+        This override of _open performs local caching of 
+        files when they are accessed.
+
+        If the file does not exist locally, we use local storage
+        to save the S3-based file to our local storage. If the
+        file does exist locally, we return the handle referring
+        to the local version.
+
+        Since WebMeV files are not directly edited, there is no 
+        risk of cache issues due to out-of-date files, etc.
+        '''
+
+        # leverage the local file system storage impl:
+        local_sc = self._get_local_storage()
+
+        # if the resource is found in local storage, use that
+        if local_sc.exists(name):
+            f = local_sc.open(name, mode)
+        # otherwise, save to the local cache for later requests
+        else:
+            # use the open method of the django-storages S3 implementation
+            f = super()._open(name, mode)
+            try:
+                # using that handle `f`, save a copy to the local cache
+                local_sc.save(name, f)
+
+                # the save above closes f implicitly, so we need to
+                # re-open before returning. Use the new local version here
+                f = local_sc.open(name, mode)
+            except Exception as ex:
+                alert_admins(f'Caught an exception when attempting to cache: {ex}')
+        return f
+
+    def _save(self, name, content):
+        return super()._save(name, content)
 
     def get_file_listing(self, full_path, recurse=False):
         '''

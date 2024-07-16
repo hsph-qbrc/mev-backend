@@ -319,3 +319,104 @@ class TestS3ResourceStorage(unittest.TestCase):
         files = storage.get_file_listing(f's3://{mock_other_bucket_name}/{mock_dir}')
         self.assertTrue(len(files) == 0)
         mock_alert_admins.assert_not_called()
+
+    def test_s3_storage_caching_with_open_case1(self):
+        '''
+        Tests that the proper operations occur
+        when the `_open` method is called. 
+
+        Here, we test the case where the resource
+        already exists in the local cache
+        '''
+        s3_storage = S3ResourceStorage()
+        mock_get_local_storage = mock.MagicMock()
+        mock_local_storage = mock.MagicMock()
+        # mock that the file DOES exist in the local storage already
+        mock_local_storage.exists.return_value = True
+        mock_handle = mock.MagicMock()
+        mock_local_storage.open.return_value = mock_handle
+        mock_get_local_storage.return_value = mock_local_storage
+
+        s3_storage._get_local_storage = mock_get_local_storage
+
+        return_val = s3_storage._open('foo')
+        self.assertEqual(return_val, mock_handle)
+
+    @mock.patch('api.storage.S3Boto3Storage._open')
+    def test_s3_storage_caching_with_open_case2(self, mock_S3Boto3Storage_open):
+        '''
+        Tests that the proper operations occur
+        when the `_open` method is called. 
+
+        Here, we test the case where the resource
+        does NOT exist in the local cache
+        '''
+        s3_storage = S3ResourceStorage()
+
+
+        # Need to mock the _open method of the S3Boto3Storage class
+        # since we only want to check that it was called- can't interact
+        # with S3 in the test suite
+        mock_remote_handle = mock.MagicMock()
+        mock_S3Boto3Storage_open.return_value = mock_remote_handle
+
+        mock_get_local_storage = mock.MagicMock()
+        mock_local_storage = mock.MagicMock()
+        # mock that the file DOES NOT exist in the local storage already
+        mock_local_storage.exists.return_value = False
+
+        name = 'foo'
+        mode = 'abc'
+
+        mock_local_handle = mock.MagicMock()
+        mock_local_storage.open.return_value = mock_local_handle
+        mock_get_local_storage.return_value = mock_local_storage
+
+        s3_storage._get_local_storage = mock_get_local_storage
+
+        # ensure that the function returns a handle to the LOCAL
+        # file as to avoid the time-consuming download multiple times.
+        return_val = s3_storage._open(name, mode)
+        self.assertEqual(return_val, mock_local_handle)
+        mock_local_storage.open.assert_called_with(name, mode)
+        mock_local_storage.save.assert_called_with(name, mock_remote_handle)
+
+        # also ensure we actually called the remote open
+        mock_S3Boto3Storage_open.assert_called()
+
+    @mock.patch('api.storage.alert_admins')
+    @mock.patch('api.storage.S3Boto3Storage._open')
+    def test_s3_storage_caching_error_catch(self, mock_S3Boto3Storage_open, \
+        mock_alert_admins):
+        '''
+        Tests that the we alert admins and don't cause any 
+        access failures in case local storage cache does not work
+        for some reason
+        '''
+        s3_storage = S3ResourceStorage()
+
+        # Need to mock the _open method of the S3Boto3Storage class
+        # since we only want to check that it was called- can't interact
+        # with S3 in the test suite
+        mock_remote_handle = mock.MagicMock()
+        mock_S3Boto3Storage_open.return_value = mock_remote_handle
+
+        mock_get_local_storage = mock.MagicMock()
+        mock_local_storage = mock.MagicMock()
+        # mock that the file DOES NOT exist in the local storage already
+        mock_local_storage.exists.return_value = False
+
+        # mock an issue with the save call:
+        mock_local_storage.save.side_effect = Exception('!!!')
+
+        name = 'foo'
+        mode = 'abc'
+
+        mock_local_handle = mock.MagicMock()
+        mock_get_local_storage.return_value = mock_local_storage
+
+        s3_storage._get_local_storage = mock_get_local_storage
+
+        return_val = s3_storage._open(name, mode)
+        self.assertEqual(return_val, mock_remote_handle)
+        mock_alert_admins.assert_called()
