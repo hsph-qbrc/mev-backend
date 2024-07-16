@@ -12,16 +12,54 @@ from botocore.exceptions import ClientError
 
 class TestLocalResourceStorage(unittest.TestCase):
 
-    @mock.patch('api.storage.os')
-    def test_existence_method(self, mock_os):
+    def test_existence_method(self):
         '''
         This is not so much a test per se as a double-check
         that our storage interface matches between the local
         and remote storage classes.
         '''
         storage = LocalResourceStorage()
-        storage.check_if_exists('abc')
-        mock_os.path.exists.assert_called_with('abc')
+                
+        fpath = os.path.join(
+            os.path.dirname(__file__),
+            'resource_contents_test_files',  
+            'demo_file1.tsv'
+        )
+        f = open(fpath)
+        fname = storage.save('abc.txt', f)
+        actual_storage_path = storage.path(fname)
+
+        self.assertTrue(storage.check_if_exists(fname))
+        self.assertTrue(storage.check_if_exists(actual_storage_path))
+
+        # clean up- otherwise files get left around
+        storage.delete(fname)
+
+    def test_abs_path(self):
+        '''
+        This is not so much a test per se as a double-check
+        that our storage interface matches between the local
+        and remote storage classes.
+        '''
+        storage = LocalResourceStorage()
+                
+        fpath = os.path.join(
+            os.path.dirname(__file__),
+            'resource_contents_test_files',  
+            'demo_file1.tsv'
+        )
+        f = open(fpath)
+        fname = storage.save('abc.txt', f)
+        actual_storage_path = storage.path(fname)
+
+        ffp1 = storage.get_absolute_path(fname)
+        self.assertEqual(ffp1, actual_storage_path)
+
+        ffp2 = storage.get_absolute_path(actual_storage_path)
+        self.assertEqual(ffp2, actual_storage_path)
+
+        # clean up- otherwise files get left around
+        storage.delete(fname)
 
 
 class TestS3ResourceStorage(unittest.TestCase):

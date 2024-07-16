@@ -29,12 +29,13 @@ class LocalResourceStorage(FileSystemStorage):
         Trivial in the case of local storage, but
         implemented to keep a consistent interface
         with the remote storage classes which 
-        implement this method.
+        implement this method (so as not to shadow the
+        `exists` methods provided by those).
         '''
-        return os.path.exists(full_path)
+        return super().exists(full_path)
 
     def get_absolute_path(self, path_relative_to_storage_root):
-        return os.path.join(settings.MEDIA_ROOT, path_relative_to_storage_root)
+        return super().path(path_relative_to_storage_root)
 
     def localize(self, resource, local_dir):
         '''
