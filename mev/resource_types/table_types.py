@@ -276,6 +276,7 @@ class TableResource(DataResource):
         The `requested_file_format` kwarg is used when we are attempting
         a read on an unvalidated file.
         '''
+        logger.info(f'Read resource ({resource_instance.pk})')
         if requested_file_format is None:
             file_format = resource_instance.file_format
         else:
@@ -676,35 +677,21 @@ class TableResource(DataResource):
         The dataframe allows the caller to subset as needed to 'paginate'
         the rows of the table
         '''
-        try:
-            logger.info(f'Read resource ({resource_instance.pk})')
-            self.read_resource(resource_instance, preview=preview)
-            self.additional_exported_cols = []
+        self.read_resource(resource_instance, preview=preview)
 
-            # if there were any filtering params requested, apply those
-            self.filter_against_query_params(query_params)
+        self.additional_exported_cols = []
 
-            # permits class-specific (i.e. implemented in child class)
-            # behavior, such as calculating row-wise means, which 
-            # can be made available on numeric tables, for instance.
-            self._resource_specific_modifications()
+        # if there were any filtering params requested, apply those
+        self.filter_against_query_params(query_params)
 
-            self.perform_sorting(query_params)
+        # permits class-specific (i.e. implemented in child class)
+        # behavior, such as calculating row-wise means, which 
+        # can be made available on numeric tables, for instance.
+        self._resource_specific_modifications()
 
-            return self.table
+        self.perform_sorting(query_params)
 
-        # for these first two exceptions, we already have logged
-        # any problems when we called the `read_resource` method
-        except ParserNotFoundException as ex:
-            raise ex
-        except ParseException as ex:
-            raise ex
-        # catch any other types of exceptions that we did not anticipate.
-        except Exception as ex:
-            logger.error('An unexpected error occurred when preparing'
-                f' a resource preview for resource ({resource_instance.pk}).'
-                f' Exception was: {ex}')
-            raise ex
+        return self.table
 
     def extract_metadata(self, resource_instance, parent_op_pk=None):
         '''
