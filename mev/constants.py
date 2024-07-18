@@ -160,3 +160,7 @@ NEGATIVE_INF_MARKER = '--inf--'
 # that it's "negative" (so that any vizualations, etc. can color accordingly)
 POSITIVE_MARKER = 'POS'
 NEGATIVE_MARKER = 'NEG'
+
+# a consistent column header for our first column. This is added
+# after we validate the files and write to storage.
+FIRST_COLUMN_ID = '__id__'

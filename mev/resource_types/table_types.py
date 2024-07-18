@@ -21,7 +21,8 @@ from constants import CSV_FORMAT, \
     OBSERVATION_SET_KEY, \
     PARENT_OP_KEY, \
     POSITIVE_INF_MARKER, \
-    NEGATIVE_INF_MARKER
+    NEGATIVE_INF_MARKER, \
+    FIRST_COLUMN_ID
 
 from exceptions import ParseException, \
     FileParseException, \
@@ -678,16 +679,20 @@ class TableResource(DataResource):
         the rows of the table
         '''
         if settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON:
-            raise NotImplementedError('')
+            return self._query_contents_on_s3(resource_instance,
+                                              query_params, preview)
         else:
-            return self._get_local_contents(resource_instance, query_params, preview)
+            return self._get_local_contents(resource_instance,
+                                            query_params, preview)
         
+    def _query_contents_on_s3(self, resource_instance, query_params={}, preview=False):
+        return pd.DataFrame()
+
     def _get_local_contents(self, resource_instance, query_params={}, preview=False):
         '''
-        Returns a dataframe of the table contents
-
-        The dataframe allows the caller to subset as needed to 'paginate'
-        the rows of the table
+        Implementation that reads the file directly using the Django storages `open` method.
+        Regardless of the storage mechanism (S3, local disk), uses Pandas to parse/filter 
+        contents and returns a pd.Dataframe
         '''
         self.read_resource(resource_instance, preview=preview)
 
@@ -784,7 +789,7 @@ class TableResource(DataResource):
         # into a user-associated directory. We only need the basename
         new_path = str(uuid.uuid4())
         with BytesIO() as fh:
-            self.table.to_csv(fh, sep='\t')
+            self.table.to_csv(fh, sep='\t', index_label=FIRST_COLUMN_ID)
             resource_instance.write_to_file(fh, new_path)
 
 
