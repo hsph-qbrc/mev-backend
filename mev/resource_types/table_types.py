@@ -677,6 +677,18 @@ class TableResource(DataResource):
         The dataframe allows the caller to subset as needed to 'paginate'
         the rows of the table
         '''
+        if settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON:
+            raise NotImplementedError('')
+        else:
+            return self._get_local_contents(resource_instance, query_params, preview)
+        
+    def _get_local_contents(self, resource_instance, query_params={}, preview=False):
+        '''
+        Returns a dataframe of the table contents
+
+        The dataframe allows the caller to subset as needed to 'paginate'
+        the rows of the table
+        '''
         self.read_resource(resource_instance, preview=preview)
 
         self.additional_exported_cols = []
