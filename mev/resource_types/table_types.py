@@ -445,6 +445,101 @@ class TableResource(DataResource):
             order_bool = [True if x==settings.ASCENDING else False for x in sort_order_list]                
             self.table.sort_values(by=column_list, ascending=order_bool, inplace=True)
 
+    def construct_s3_query_params(self, query_params):
+
+        base_command = 'SELECT {col_select} FROM s3object s {where_clause} {limit_clause}'
+        where_clause_list = []
+        where_clause = ''
+        limit_clause = ''
+        col_select = '*' # unless specified otherwise, get all columns
+
+        for k,v in query_params.items():
+            # v is either a value (in the case of strict equality)
+            # or a delimited string which will dictate the comparison.
+            # For example, to filter on the 'pval' column for values less than or equal to 0.01, 
+            # v would be "[lte]:0.01". The "[lte]" string is set in our general settings file.
+            split_v = v.split(settings.QUERY_PARAM_DELIMITER)
+
+            if k == settings.ROWNAME_FILTER:
+                if len(split_v) != 2:
+                    raise ParseException('The query for filtering on the rows'
+                        ' was not properly formatted. It should be [<op>]:<value>')
+
+                op_name = split_v[0]
+                if not op_name in [settings.IS_IN, 
+                                   settings.EQUAL_TO,
+                                   settings.CASE_INSENSITIVE_EQUALS,
+                                   settings.STARTSWITH]:
+                    raise ParseException('When filtering on rows, we only'
+                        f' accept strict equality ({settings.EQUAL_TO}) or'
+                        f' case-insensitive'
+                        f' ({settings.CASE_INSENSITIVE_EQUALS}) to'
+                        f' get a single row or {settings.IS_IN} to get'
+                        'multiple rows.'
+                    )
+                val = split_v[1]
+                if op_name == settings.EQUAL_TO:
+                    where_clause_list.append(f"s.{FIRST_COLUMN_ID} = '{val}'")
+                    limit_clause = 'LIMIT 1'
+                elif op_name == settings.CASE_INSENSITIVE_EQUALS:
+                    where_clause_list.append(f"LOWER(s.{FIRST_COLUMN_ID}) = '{val.lower()}'")
+                    limit_clause = 'LIMIT 1'
+                elif op_name == settings.IS_IN:
+                    # for SQL, need to add quotes in the delimited string.
+                    # Note that this does NOT include the leading the trailing
+                    # single quotes, which we add later
+                    vs = [_.strip() for _ in val.split(',') if len(_) > 0]
+                    csv = "','".join(vs)
+                    where_clause_list.append(f"s.{FIRST_COLUMN_ID} IN ('{csv}')")
+                    limit_clause = f'LIMIT {len(vs)}'
+                elif op_name == settings.STARTSWITH:
+                    where_clause_list.append(f"s.{FIRST_COLUMN_ID} LIKE '{val}%'")
+
+            elif k == settings.COLNAME_FILTER:
+                if len(split_v) != 2:
+                    raise ParseException('The query for filtering on the columns'
+                        ' was not properly formatted. It should be [<op>]:<value>')
+                # the name of the operation. For column name filtering, we 
+                # only allow strict equals (single column) or 
+                # 'is in' (for getting >=1 columns)
+                op_name = split_v[0] 
+                if not op_name in [settings.IS_IN, settings.EQUAL_TO]:
+                    raise ParseException('When filtering on columns, we only'
+                        f' accept strict equality ({settings.EQUAL_TO}) to'
+                        f' get a single column or {settings.IS_IN} to get'
+                        'multiple columns.'
+                    )
+                val = split_v[1]
+                col_select = 's."__id__",'
+                if op_name == settings.EQUAL_TO:
+                    col_select += f's."{val}"'
+                elif op_name == settings.IS_IN:
+                    # for SQL, need to add quotes in the delimited string.
+                    # Note that this does NOT include the leading the trailing
+                    # single quotes, which we add later
+                    csv = ''.join([f's."{_.strip()}",' for _ in val.split(',')]).rstrip(',')
+                    col_select += csv
+            elif (not k in self.IGNORED_QUERY_PARAMS):
+                # TODO: add logic
+                pass
+            elif k in self.IGNORED_QUERY_PARAMS:
+                # need to have this here or else the 'ignored' query params
+                # are treated as unknown columns to sort on in the `else` statement
+                # below
+                pass
+            else:
+                raise ParseException(f'The column "{k}" is'
+                    ' not available for filtering.')
+
+        if len(where_clause_list) > 0:
+            where_clause = 'WHERE '
+            where_clause += ' and '.join(where_clause_list)
+
+        sql = base_command.format(col_select=col_select, 
+                                  where_clause=where_clause,
+                                  limit_clause=limit_clause)
+        return sql.rstrip()
+
     def filter_against_query_params(self, query_params):
         '''
         Looks through the query params to subset the table
