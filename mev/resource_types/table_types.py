@@ -204,6 +204,7 @@ class TableResource(DataResource):
 
     def __init__(self):
         self.table = None
+        self.requires_local_processing = False
 
     @staticmethod
     def get_paginator():
@@ -773,7 +774,8 @@ class TableResource(DataResource):
         The dataframe allows the caller to subset as needed to 'paginate'
         the rows of the table
         '''
-        if settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON:
+        if (settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON) and \
+            (not self.requires_local_processing):
             return self._query_contents_on_s3(resource_instance,
                                               query_params, preview)
         else:
@@ -946,6 +948,17 @@ class Matrix(TableResource):
         INCLUDE_ROWMEANS
     ]
 
+    # This dict specifies whether the processing
+    # for the special/extra keyword filters will 
+    # require local processing (in case we are using
+    # S3 select). Certain aggregation operations cannot
+    # be performed by S3 select, so we need to fall back
+    # to local processing
+    REQUIRES_LOCAL_PROCESSING = {
+        ROWMEAN_KEYWORD: True,
+        INCLUDE_ROWMEANS: True
+    }
+
     # Copy the ignored params from the parent (don't want to modify that)
     IGNORED_QUERY_PARAMS = [x for x in TableResource.IGNORED_QUERY_PARAMS]
     IGNORED_QUERY_PARAMS.extend(EXTRA_MATRIX_QUERY_PARAMS)
@@ -1071,9 +1084,15 @@ class Matrix(TableResource):
         # the self.current_query_params dict is empty and no further
         # modifications to the returned content are made.
         self.extra_query_params = {}
+        needs_local_processing = []
         for p in self.EXTRA_MATRIX_QUERY_PARAMS:
             if p in query_params:
                 self.extra_query_params[p] = query_params[p]
+                if self.REQUIRES_LOCAL_PROCESSING[p]:
+                    needs_local_processing.append(True)
+
+        if any(needs_local_processing):
+            self.requires_local_processing = True
 
         # additional filtering/behavior specific to a Matrix (if requested)
         # is handled in the _resource_specific_modifications method
