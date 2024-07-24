@@ -1,14 +1,19 @@
 # This file contains information about the different table-
 # based file types and methods for validating them
 import logging
+from multiprocessing.sharedctypes import Value
 import re
 import uuid
 from functools import reduce
 from io import BytesIO
 from collections import OrderedDict
+import json
+import os
+import time
 
 import pandas as pd
 import numpy as np
+import boto3
 
 from django.conf import settings
 from django.core.paginator import Paginator, Page
@@ -121,6 +126,9 @@ EXCEL_DATETIME_ERROR = ('A datetime ({x}) was found when parsing your file.'
 # If requesting a preview of the table, how many lines do we return?
 PREVIEW_NUM_LINES = 5
 
+S3_RECORD_DELIMITER = ';'
+
+
 def col_str_formatter(x):
     '''
     x is a tuple with the column number
@@ -197,6 +205,10 @@ class TableResource(DataResource):
 
     # the "standardized" format we will save all table-based files as:
     STANDARD_FORMAT = TSV_FORMAT
+
+    # by default, the columns of a general TableResource do NOT
+    # have an expected type (e.g. all entries should be integers, etc.)
+    TARGET_TYPE = None
 
     # Create a list of query params that are "reserved" and we ignore when
     # attempting to filter on the actual table content (e.g. the column/rows)
@@ -446,7 +458,7 @@ class TableResource(DataResource):
             order_bool = [True if x==settings.ASCENDING else False for x in sort_order_list]                
             self.table.sort_values(by=column_list, ascending=order_bool, inplace=True)
 
-    def construct_s3_query_params(self, query_params):
+    def _construct_s3_query_sql(self, query_params):
 
         base_command = 'SELECT {col_select} FROM s3object s {where_clause} {limit_clause}'
         where_clause_list = []
@@ -776,14 +788,97 @@ class TableResource(DataResource):
         '''
         if (settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON) and \
             (not self.requires_local_processing):
-            return self._query_contents_on_s3(resource_instance,
-                                              query_params, preview)
+            try:
+                return self._query_contents_on_s3(resource_instance,
+                                                  query_params,
+                                                  preview)
+            except:
+                # if anything goes wrong in the S3-based query,
+                # fall back to local.
+                err_msg = ('Encountered an error when querying S3 select'
+                             f' on resource {resource_instance.pk}')
+                logger.error(err_msg)
+                alert_admins(err_msg)
+                return self._get_local_contents(resource_instance,
+                                                query_params,
+                                                preview) 
         else:
             return self._get_local_contents(resource_instance,
-                                            query_params, preview)
+                                            query_params,
+                                            preview)
         
     def _query_contents_on_s3(self, resource_instance, query_params={}, preview=False):
-        return pd.DataFrame()
+        logger.info(f'Query contents of resource ({resource_instance.pk}) via S3 select.')
+        sql = self._construct_s3_query_sql(query_params)
+        self._issue_s3_select_query(resource_instance, sql)
+        self._resource_specific_modifications()
+        self.perform_sorting(query_params)
+        return self.table
+
+    def _make_s3_select(self, key, sql):
+
+        s3 = boto3.client('s3')
+        response = s3.select_object_content(
+            Bucket=settings.MEDIA_ROOT,
+            Key=key,
+            ExpressionType='SQL',
+            Expression=sql,
+            InputSerialization={'CSV': {"FileHeaderInfo": "Use", "FieldDelimiter": "\t"}},
+            OutputSerialization={'JSON': {'RecordDelimiter': S3_RECORD_DELIMITER}},
+        )
+        s = ''
+        for event in response['Payload']:
+            if 'Records' in event:
+                records = event['Records']['Payload'].decode('utf-8')
+                s += records
+        return s
+
+    def _issue_s3_select_query(self, resource_instance, sql):
+        logger.info(f'About to issue s3 select on resource ({resource_instance.pk})'
+                    f' with SQL: {sql}')
+        s = self._make_s3_select(resource_instance.datafile.name, sql)
+        if len(s) == 0:
+            return pd.DataFrame([])
+        else:
+            try:
+                q = [json.loads(x) for x in s.split(S3_RECORD_DELIMITER) if len(x) > 0]
+            except Exception:
+                f = os.path.join(settings.TMP_DIR, 
+                        f'sql_dump.{resource_instance.pk}.{time.time()}.txt')
+                with open(f, 'w') as fout:
+                    fout.write(sql + '\n\n\n')
+                    fout.write(s)
+                logger.error('Failed to parse returned payload from S3 select as JSON.'
+                    f' Writing results to {f}.')
+            self.table = pd.DataFrame(q).set_index(FIRST_COLUMN_ID, drop=True)
+
+            # the data returned by s3 select is all string-based. The child
+            # class implementing the particular resource type should perform
+            # this cast (e.g. to int if an IntegerMatrix)
+            self._attempt_type_cast()
+
+    def _attempt_type_cast(self):
+        '''
+        This function is used to appropriately cast the contents of
+        the table.
+
+        We need this since the S3 select (if used), returns everything
+        as a string. We attempt to cast to the dtypes consistent with 
+        the resource type (e.g. integers for an IntegerMatrix resource)
+        '''
+        # given that the file needed to be previously validated,
+        # it is VERY unlikely that we could not cast here. Still,
+        # we guard against it.
+        if self.TARGET_TYPE is None:
+            return
+
+        try:
+            self.table = self.table.astype(self.TARGET_TYPE)
+        except ValueError as ex:
+            err_msg = ('Failed to cast properly for payload'
+                        f' returned from S3 select. Issue was {ex}')
+            logger.error(err_msg)
+            alert_admins(err_msg)
 
     def _get_local_contents(self, resource_instance, query_params={}, preview=False):
         '''
@@ -934,7 +1029,8 @@ class Matrix(TableResource):
         }
     ]
 
-    # looking for integers OR floats.  Both are acceptable  
+    # looking for integers OR floats.  Both are acceptable
+    TARGET_TYPE = 'float'
     TARGET_PATTERN = '(float|int)\d{0,2}'
 
     # Define some additional filtering/sorting params that
@@ -1098,13 +1194,25 @@ class Matrix(TableResource):
         # is handled in the _resource_specific_modifications method
         return super().get_contents(resource_instance, query_params, preview)
 
+    # def _attempt_type_cast(self):
+    #     # given that the file needed to be previously validated,
+    #     # it is VERY unlikely that we could not cast here. Still,
+    #     # we guard against it.
+    #     try:
+    #         self.table = self.table.astype('float')
+    #     except ValueError as ex:
+    #         err_msg = ('Failed to cast to float for payload'
+    #                     f' returned from S3 select. Issue was {ex}')
+    #         logger.error(err_msg)
+    #         alert_admins(err_msg)
 
 class IntegerMatrix(Matrix):
     '''
     An `IntegerMatrix` further specializes the `Matrix`
     to admit only integers.
     '''
-    # looking for only integers. 
+    # looking for only integers.
+    TARGET_TYPE = 'int'
     TARGET_PATTERN = 'int\d{0,2}'
 
     DESCRIPTION = 'A table where all the entries are integers'\
@@ -1172,6 +1280,18 @@ class IntegerMatrix(Matrix):
                 return (False, error_message)
             
         return (True, None)
+
+    # def _attempt_type_cast(self):
+    #     # given that the file needed to be previously validated,
+    #     # it is VERY unlikely that we could not cast here. Still,
+    #     # we guard against it.
+    #     try:
+    #         self.table = self.table.astype('int')
+    #     except ValueError as ex:
+    #         err_msg = ('Failed to cast to float for payload'
+    #                     f' returned from S3 select. Issue was {ex}')
+    #         logger.error(err_msg)
+    #         alert_admins(err_msg)
 
 
 class RnaSeqCountMatrix(IntegerMatrix):
