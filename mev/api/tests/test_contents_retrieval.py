@@ -83,3 +83,40 @@ class TableResourceContentsTests(BaseAPITestCase):
         contents = m.get_contents(mock_resource, query_params)
         mock_s3_contents.assert_not_called()
         mock_local_contents.assert_called()
+
+
+    @override_settings(WEBMEV_DEPLOYMENT_PLATFORM=settings.AMAZON)
+    @mock.patch('resource_types.table_types.TableResource._get_local_contents')
+    @mock.patch('resource_types.table_types.TableResource._query_contents_on_s3')
+    def test_uses_local_query_on_abs_value_request(self, mock_s3_contents, mock_local_contents):
+        m = Matrix()
+
+        # first check that we use s3 select if we pass a simple 'greater than':
+        query_params = {
+            'log2FoldChange': '[gt]:2'
+        }
+        mock_resource = mock.MagicMock()
+        contents = m.get_contents(mock_resource, query_params)
+        mock_s3_contents.assert_called()
+        mock_local_contents.assert_not_called()
+
+        # now test that we use local query if we have an absolute value request
+        m = Matrix()
+        mock_s3_contents.reset_mock()
+        mock_local_contents.reset_mock()
+        query_params = {
+            'log2FC':'[absgt]:2.0'
+        }
+        contents = m.get_contents(mock_resource, query_params)
+        mock_s3_contents.assert_not_called()
+        mock_local_contents.assert_called()
+
+        m = Matrix()
+        mock_s3_contents.reset_mock()
+        mock_local_contents.reset_mock()
+        query_params = {
+            'log2FC':'[foo]:2.0'
+        }
+        contents = m.get_contents(mock_resource, query_params)
+        mock_s3_contents.assert_called()
+        mock_local_contents.assert_not_called()

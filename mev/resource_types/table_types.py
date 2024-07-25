@@ -458,6 +458,14 @@ class TableResource(DataResource):
             order_bool = [True if x==settings.ASCENDING else False for x in sort_order_list]                
             self.table.sort_values(by=column_list, ascending=order_bool, inplace=True)
 
+    def _construct_inclusion_clause(self, key, val):
+        # for SQL, need to add quotes in the delimited string.
+        # Note that this does NOT include the leading the trailing
+        # single quotes, which we add later
+        vs = [_.strip() for _ in val.split(',') if len(_) > 0]
+        csv = "','".join(vs)
+        return (len(vs), f"s.{key} IN ('{csv}')")
+
     def _construct_s3_query_sql(self, query_params):
 
         base_command = 'SELECT {col_select} FROM s3object s {where_clause} {limit_clause}'
@@ -496,15 +504,10 @@ class TableResource(DataResource):
                     limit_clause = 'LIMIT 1'
                 elif op_name == settings.CASE_INSENSITIVE_EQUALS:
                     where_clause_list.append(f"LOWER(s.{FIRST_COLUMN_ID}) = '{val.lower()}'")
-                    limit_clause = 'LIMIT 1'
                 elif op_name == settings.IS_IN:
-                    # for SQL, need to add quotes in the delimited string.
-                    # Note that this does NOT include the leading the trailing
-                    # single quotes, which we add later
-                    vs = [_.strip() for _ in val.split(',') if len(_) > 0]
-                    csv = "','".join(vs)
-                    where_clause_list.append(f"s.{FIRST_COLUMN_ID} IN ('{csv}')")
-                    limit_clause = f'LIMIT {len(vs)}'
+                    _n, clause = self._construct_inclusion_clause(FIRST_COLUMN_ID, val)
+                    where_clause_list.append(clause)
+                    limit_clause = f'LIMIT {_n}'
                 elif op_name == settings.STARTSWITH:
                     where_clause_list.append(f"s.{FIRST_COLUMN_ID} LIKE '{val}%'")
 
@@ -533,8 +536,20 @@ class TableResource(DataResource):
                     csv = ''.join([f's."{_.strip()}",' for _ in val.split(',')]).rstrip(',')
                     col_select += csv
             elif (not k in self.IGNORED_QUERY_PARAMS):
-                # TODO: add logic
-                pass
+                if split_v[0] in settings.NUMERIC_OPERATOR_SYMBOLS:
+                    val = self.do_type_cast(split_v[1], 'float')
+                    op = settings.NUMERIC_OPERATOR_SYMBOLS[split_v[0]]
+                    where_clause_list.append(f"CAST(s.{k} AS FLOAT) {op} {val}")
+                elif split_v[0] == settings.EQUAL_TO:
+                    where_clause_list.append(f"s.{k} = {split_v[1]}")
+                elif split_v[0] == settings.CASE_INSENSITIVE_EQUALS:
+                    where_clause_list.append(f"lower(s.{k}) = '{split_v[1].lower()}'")
+                elif split_v[0] == settings.STARTSWITH:
+                    where_clause_list.append(f"s.{k} LIKE '{split_v[1].lower()}%'")
+                elif split_v[0] == settings.IS_IN:
+                    _n, clause = self._construct_inclusion_clause(k, split_v[1])
+                    where_clause_list.append(clause)
+
             elif k in self.IGNORED_QUERY_PARAMS:
                 # need to have this here or else the 'ignored' query params
                 # are treated as unknown columns to sort on in the `else` statement
@@ -816,6 +831,11 @@ class TableResource(DataResource):
         return self.table
 
     def _make_s3_select(self, key, sql):
+        '''
+        Performs the actual task of calling out to s3 select.
+
+        Returns a string
+        '''
 
         s3 = boto3.client('s3')
         response = s3.select_object_content(
@@ -833,16 +853,34 @@ class TableResource(DataResource):
                 s += records
         return s
 
+    def _handle_s3_select_problem(self, s3_select_ex):
+        try:
+            err_code = s3_select_ex.response['Error']['Code']
+            if err_code == 'MissingHeaders':
+                # MissingHeaders is returned when you attempt to select
+                # on a column that does not exist
+                return 'One or more of the columns was not properly specified.'
+            else:
+                logger.info('Received unexpected error code when returning'
+                    f'from S3 Select. Was: {err_code}')
+        except KeyError as ex:
+            logger.info('Failed to properly parse the S3 select exception.')
+        return 'Experienced a problem when querying from S3 select.'
+
     def _issue_s3_select_query(self, resource_instance, sql):
         logger.info(f'About to issue s3 select on resource ({resource_instance.pk})'
                     f' with SQL: {sql}')
-        s = self._make_s3_select(resource_instance.datafile.name, sql)
+        try:
+            s = self._make_s3_select(resource_instance.datafile.name, sql)
+        except Exception as ex:
+            err_str = self._handle_s3_select_problem(ex)
+            raise ex
         if len(s) == 0:
-            return pd.DataFrame([])
+            self.table = pd.DataFrame([])
         else:
             try:
                 q = [json.loads(x) for x in s.split(S3_RECORD_DELIMITER) if len(x) > 0]
-            except Exception:
+            except Exception as ex:
                 f = os.path.join(settings.TMP_DIR, 
                         f'sql_dump.{resource_instance.pk}.{time.time()}.txt')
                 with open(f, 'w') as fout:
@@ -850,12 +888,13 @@ class TableResource(DataResource):
                     fout.write(s)
                 logger.error('Failed to parse returned payload from S3 select as JSON.'
                     f' Writing results to {f}.')
+                raise ex
             self.table = pd.DataFrame(q).set_index(FIRST_COLUMN_ID, drop=True)
 
-            # the data returned by s3 select is all string-based. The child
-            # class implementing the particular resource type should perform
-            # this cast (e.g. to int if an IntegerMatrix)
-            self._attempt_type_cast()
+        # the data returned by s3 select is all string-based. The child
+        # class implementing the particular resource type should perform
+        # this cast (e.g. to int if an IntegerMatrix)
+        self._attempt_type_cast()
 
     def _attempt_type_cast(self):
         '''
@@ -1180,15 +1219,21 @@ class Matrix(TableResource):
         # the self.current_query_params dict is empty and no further
         # modifications to the returned content are made.
         self.extra_query_params = {}
-        needs_local_processing = []
         for p in self.EXTRA_MATRIX_QUERY_PARAMS:
             if p in query_params:
                 self.extra_query_params[p] = query_params[p]
                 if self.REQUIRES_LOCAL_PROCESSING[p]:
-                    needs_local_processing.append(True)
+                    self.requires_local_processing = True
 
-        if any(needs_local_processing):
-            self.requires_local_processing = True
+        # in addition to special queries for rowmeans, etc. we 
+        # need to check that queries for absolute values, etc.
+        # are also processed locally (or other comparisons)
+        for k,v in query_params.items():
+            split_v = v.split(settings.QUERY_PARAM_DELIMITER)
+            if len(split_v) == 2: # e.g. ('[abslt]', 0.2)
+                if split_v[0] in [settings.ABS_VAL_GREATER_THAN,
+                                  settings.ABS_VAL_LESS_THAN]:
+                    self.requires_local_processing = True
 
         # additional filtering/behavior specific to a Matrix (if requested)
         # is handled in the _resource_specific_modifications method
