@@ -539,7 +539,12 @@ class TableResource(DataResource):
                 if split_v[0] in settings.NUMERIC_OPERATOR_SYMBOLS:
                     val = self.do_type_cast(split_v[1], 'float')
                     op = settings.NUMERIC_OPERATOR_SYMBOLS[split_v[0]]
-                    where_clause_list.append(f"CAST(s.{k} AS FLOAT) {op} {val}")
+                    # since we are performing a cast below, we need to careful
+                    # to ignore records that include 'out of bounds' values
+                    # that preclude the casting. Typically, this includes
+                    # Inf/-Inf and NaN (as blanks or NA)
+                    prefix = f"LOWER(s.{k}) != 'inf' and LOWER(s.{k}) != '-inf' and s.{k} != '' and s.{k} != 'NA'"
+                    where_clause_list.append(f"{prefix} and CAST(s.{k} AS FLOAT) {op} {val}")
                 elif split_v[0] == settings.EQUAL_TO:
                     where_clause_list.append(f"s.{k} = {split_v[1]}")
                 elif split_v[0] == settings.CASE_INSENSITIVE_EQUALS:

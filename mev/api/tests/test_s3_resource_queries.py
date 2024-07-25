@@ -100,7 +100,9 @@ class TableResourceS3QueryTests(BaseAPITestCase):
             'padj': '[lte]:0.05'
         }
         sql = t._construct_s3_query_sql(query_params)
-        expected_sql = 'SELECT * FROM s3object s WHERE CAST(s.padj AS FLOAT) <= 0.05'
+        expected_sql = ("SELECT * FROM s3object s WHERE LOWER(s.padj) != 'inf'"
+         " and LOWER(s.padj) != '-inf' and s.padj != '' and s.padj != 'NA' and"
+         " CAST(s.padj AS FLOAT) <= 0.05")
         self.assertEqual(sql, expected_sql)
 
         query_params = {
@@ -108,7 +110,12 @@ class TableResourceS3QueryTests(BaseAPITestCase):
             'log2FoldChange': '[gt]:2'
         }
         sql = t._construct_s3_query_sql(query_params)
-        expected_sql = 'SELECT * FROM s3object s WHERE CAST(s.padj AS FLOAT) <= 0.05 and CAST(s.log2FoldChange AS FLOAT) > 2.0'
+        expected_sql = ("SELECT * FROM s3object s WHERE "
+        "LOWER(s.padj) != 'inf' and LOWER(s.padj) != '-inf' "
+        "and s.padj != '' and s.padj != 'NA' and CAST(s.padj AS FLOAT) <= 0.05 "
+        "and LOWER(s.log2FoldChange) != 'inf' "
+        "and LOWER(s.log2FoldChange) != '-inf' and s.log2FoldChange != '' "
+        "and s.log2FoldChange != 'NA' and CAST(s.log2FoldChange AS FLOAT) > 2.0")
         self.assertEqual(sql, expected_sql)
 
     def test_sql_numerical_equality_filter_commands(self):
