@@ -9,6 +9,7 @@ import numpy as np
 from resource_types.table_types import TableResource, \
     Matrix, \
     RnaSeqCountMatrix, \
+    ElementTable, \
     S3_RECORD_DELIMITER, \
     PREVIEW_NUM_LINES
 
@@ -386,3 +387,57 @@ class TableResourceS3QueryTests(BaseAPITestCase):
         m.table = pd.DataFrame(j).set_index(FIRST_COLUMN_ID, drop=True)
         m._attempt_type_cast()
         self.assertTrue(np.isnan(m.table.loc['g4', 'sB']))
+
+    def test_cast_element_table_case1(self):
+        '''
+        Here, we test that we can properly handle the returned
+        payload from an s3 select query.
+
+        The elementTable can contain mixed types which we need to 
+        handle reasonably
+        '''
+        # here, we take column B to have string types (e.g. gender)
+        # However, we also take one of the entries as a blank (unknown)
+        # Column C contains floats, one of which is empty
+        j = [
+                {'__id__': 'g1', 'A': '0', 'B': 'm', 'C': '2.2'},
+                {'__id__': 'g2', 'A': '10', 'B': 'f', 'C': '12.1'},
+                {'__id__': 'g3', 'A': '20', 'B': 'm', 'C': ''},
+                {'__id__': 'g4', 'A': '30', 'B': '', 'C': '3.2'},
+                {'__id__': 'g5', 'A': '40', 'B': 'f', 'C': '4.2'}
+            ]
+
+        m = ElementTable()
+        m.table = pd.DataFrame(j).set_index(FIRST_COLUMN_ID, drop=True)
+        m._attempt_type_cast()
+        self.assertTrue(np.isnan(m.table.loc['g3', 'C']))
+        self.assertTrue(m.table.loc['g4', 'B'] == '')
+        self.assertTrue(m.table.loc['g5', 'C'] == 4.2)
+
+    def test_cast_element_table_case2(self):
+        '''
+        Here, we test that we can properly handle the returned
+        payload from an s3 select query.
+
+        The elementTable can contain mixed types which we need to 
+        handle reasonably
+        '''
+        # here, we take column B to have string types (e.g. gender)
+        # However, we also take one of the entries as a blank (unknown)
+        # Column C contains floats, one of which is empty
+        j = [
+                {'__id__': 'g1', 'A': '0', 'B': '2.1', 'C': '2.2'},
+                {'__id__': 'g2', 'A': '10', 'B': 'Inf', 'C': '12.1'},
+                {'__id__': 'g3', 'A': '20', 'B': '0.2', 'C': ''},
+                {'__id__': 'g4', 'A': '30', 'B': '-Inf', 'C': '3.2'},
+                {'__id__': 'g5', 'A': '40', 'B': '', 'C': '4.2'}
+            ]
+
+        m = ElementTable()
+        m.table = pd.DataFrame(j).set_index(FIRST_COLUMN_ID, drop=True)
+        m._attempt_type_cast()
+        self.assertTrue(~np.isfinite(m.table.loc['g2', 'B']))
+        self.assertTrue(~np.isfinite(m.table.loc['g4', 'B']))
+        self.assertTrue(np.isnan(m.table.loc['g3', 'C']))
+        self.assertTrue(np.isnan(m.table.loc['g5', 'B']))
+        self.assertTrue(m.table.loc['g5', 'C'] == 4.2)

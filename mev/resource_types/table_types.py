@@ -1541,6 +1541,33 @@ class ElementTable(TableResource):
             element_list.append(element.to_dict()['value'])
         return element_list
 
+    def _attempt_type_cast(self):
+        '''
+        This function is used to appropriately cast the contents of
+        the table.
+
+        We need this since the S3 select (if used), returns everything
+        as a string. We attempt to cast to the dtypes consistent with 
+        the resource type (e.g. integers for an IntegerMatrix resource)
+
+        One complex consideration with ElementTable's is that they
+        can contain mixed types (e.g. some columns could be numeric
+        and others could be strings)
+        '''
+        for c in self.table.columns:
+            try:
+                # attempt to replace any missing/blank values with nan and THEN cast
+                # as a float. If all the non-blank values were able to be cast as
+                # numbers, then we're good in taking this as a numeric column.
+                # Note that 'inf/-inf' are also interpreted during the cast
+                # (see unit tests)
+                self.table[c] = self.table[c].replace('', np.nan).astype('float')
+            except ValueError as ex:
+                # even after replacing empty strings with NaN, we could not cast.
+                # This means there's remaining strings that cannot be interpreted 
+                # as numbers. Can just leave as-is
+                pass
+
 
 class AnnotationTable(ElementTable):
     '''
