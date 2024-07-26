@@ -4,10 +4,10 @@ from django.test import override_settings
 from django.conf import settings
 
 import pandas as pd
+import numpy as np
 
 from resource_types.table_types import TableResource, \
     Matrix, \
-    IntegerMatrix, \
     RnaSeqCountMatrix, \
     S3_RECORD_DELIMITER, \
     PREVIEW_NUM_LINES
@@ -68,7 +68,7 @@ class TableResourceS3QueryTests(BaseAPITestCase):
         sql = t._construct_s3_query_sql(query_params, preview=True)
         expected_sql = f'SELECT * FROM s3object s LIMIT {PREVIEW_NUM_LINES}'
         self.assertEqual(sql, expected_sql)
-        
+
     def test_sql_combination_filter_commands(self):
         """
         Test that we construct the proper SQL
@@ -359,3 +359,30 @@ class TableResourceS3QueryTests(BaseAPITestCase):
         s = t._handle_s3_select_problem(mock_selection_exception)
         expected_str = 'Experienced a problem when querying from S3 select.'
         self.assertEqual(s, expected_str)
+
+    def test_cast_case1(self):
+        '''
+        Here, we test that we can properly handle the returned
+        payload from an s3 select query.
+
+        Technically, our integer matrices allow NA values in validation.
+        The resulting file written to our storage (post-validation) contains
+        a blank value where the NA value was. We need to ensure that we 
+        handle this case when retrieving the contents of the resource.
+        Note that this doesn't affect anything related to analyses,etc
+        since they do not use the 'get_contents' functionality.
+        '''
+        # the payload returned from S3 after it has been converted to JSON.
+        # Note the blank value for (g4, sB)
+        j = [
+                {'__id__': 'g1', 'sA': '0', 'sB': '1.0', 'sC': '2'},
+                {'__id__': 'g2', 'sA': '10', 'sB': '11.0', 'sC': '12'},
+                {'__id__': 'g3', 'sA': '20', 'sB': '21.0', 'sC': '22'},
+                {'__id__': 'g4', 'sA': '30', 'sB': '', 'sC': '32'},
+                {'__id__': 'g5', 'sA': '40', 'sB': '41.0', 'sC': '42'}
+            ]
+
+        m = Matrix()
+        m.table = pd.DataFrame(j).set_index(FIRST_COLUMN_ID, drop=True)
+        m._attempt_type_cast()
+        self.assertTrue(np.isnan(m.table.loc['g4', 'sB']))

@@ -913,19 +913,7 @@ class TableResource(DataResource):
         as a string. We attempt to cast to the dtypes consistent with 
         the resource type (e.g. integers for an IntegerMatrix resource)
         '''
-        # given that the file needed to be previously validated,
-        # it is VERY unlikely that we could not cast here. Still,
-        # we guard against it.
-        if self.TARGET_TYPE is None:
-            return
-
-        try:
-            self.table = self.table.astype(self.TARGET_TYPE)
-        except ValueError as ex:
-            err_msg = ('Failed to cast properly for payload'
-                        f' returned from S3 select. Issue was {ex}')
-            logger.error(err_msg)
-            alert_admins(err_msg)
+        pass
 
     def _get_local_contents(self, resource_instance, query_params={}, preview=False):
         '''
@@ -1247,17 +1235,39 @@ class Matrix(TableResource):
         # is handled in the _resource_specific_modifications method
         return super().get_contents(resource_instance, query_params, preview)
 
-    # def _attempt_type_cast(self):
-    #     # given that the file needed to be previously validated,
-    #     # it is VERY unlikely that we could not cast here. Still,
-    #     # we guard against it.
-    #     try:
-    #         self.table = self.table.astype('float')
-    #     except ValueError as ex:
-    #         err_msg = ('Failed to cast to float for payload'
-    #                     f' returned from S3 select. Issue was {ex}')
-    #         logger.error(err_msg)
-    #         alert_admins(err_msg)
+    def _attempt_type_cast(self):
+        '''
+        This function is used to appropriately cast the contents of
+        the table.
+
+        We need this since the S3 select (if used), returns everything
+        as a string. We attempt to cast to the dtypes consistent with 
+        the resource type (e.g. integers for an IntegerMatrix resource)
+        '''
+        # Note that IntegerMatrix types can technically include missing/NA values.
+        # The problem with that is that when s3 is queried, it will return 
+        # those NAs as empty string values. This precludes a simple cast if that's
+        # the case
+
+        # Attempt a simple, direct cast:
+        try:
+            self.table = self.table.astype(self.TARGET_TYPE)
+        except ValueError as ex:
+            # note that we previously validated this to be an integer matrix, 
+            # so we just have to massage it properly.
+
+            # replace any empty strings with np.nan. Note that this will ALSO
+            # preclude a cast using .astype('int'), BUT the previous validation
+            # means we are safe to then cast as a float
+            try:
+                self.table = self.table.replace('', np.nan).astype('float')
+
+            # in case something STILL does wrong...
+            except Exception as ex2:
+                err_msg = ('Failed to cast properly for payload'
+                            f' returned from S3 select. Issue was {ex2}')
+                logger.error(err_msg)
+                alert_admins(err_msg)
 
 class IntegerMatrix(Matrix):
     '''
@@ -1333,18 +1343,6 @@ class IntegerMatrix(Matrix):
                 return (False, error_message)
             
         return (True, None)
-
-    # def _attempt_type_cast(self):
-    #     # given that the file needed to be previously validated,
-    #     # it is VERY unlikely that we could not cast here. Still,
-    #     # we guard against it.
-    #     try:
-    #         self.table = self.table.astype('int')
-    #     except ValueError as ex:
-    #         err_msg = ('Failed to cast to float for payload'
-    #                     f' returned from S3 select. Issue was {ex}')
-    #         logger.error(err_msg)
-    #         alert_admins(err_msg)
 
 
 class RnaSeqCountMatrix(IntegerMatrix):
