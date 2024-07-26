@@ -466,9 +466,9 @@ class TableResource(DataResource):
         csv = "','".join(vs)
         return (len(vs), f"s.{key} IN ('{csv}')")
 
-    def _construct_s3_query_sql(self, query_params):
+    def _construct_s3_query_sql(self, query_params, preview=False):
 
-        base_command = 'SELECT {col_select} FROM s3object s {where_clause} {limit_clause}'
+        base_command = 'SELECT {col_select} FROM s3object s{where_clause} {limit_clause}'
         where_clause_list = []
         where_clause = ''
         limit_clause = ''
@@ -565,8 +565,11 @@ class TableResource(DataResource):
                     ' not available for filtering.')
 
         if len(where_clause_list) > 0:
-            where_clause = 'WHERE '
+            where_clause = ' WHERE '
             where_clause += ' and '.join(where_clause_list)
+
+        if preview:
+            limit_clause = f'LIMIT {PREVIEW_NUM_LINES}'
 
         sql = base_command.format(col_select=col_select, 
                                   where_clause=where_clause,
@@ -829,7 +832,7 @@ class TableResource(DataResource):
         
     def _query_contents_on_s3(self, resource_instance, query_params={}, preview=False):
         logger.info(f'Query contents of resource ({resource_instance.pk}) via S3 select.')
-        sql = self._construct_s3_query_sql(query_params)
+        sql = self._construct_s3_query_sql(query_params, preview=preview)
         self._issue_s3_select_query(resource_instance, sql)
         self._resource_specific_modifications()
         self.perform_sorting(query_params)

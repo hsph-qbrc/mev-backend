@@ -9,7 +9,8 @@ from resource_types.table_types import TableResource, \
     Matrix, \
     IntegerMatrix, \
     RnaSeqCountMatrix, \
-    S3_RECORD_DELIMITER
+    S3_RECORD_DELIMITER, \
+    PREVIEW_NUM_LINES
 
 from constants import FIRST_COLUMN_ID
 
@@ -57,6 +58,17 @@ class TableResourceS3QueryTests(BaseAPITestCase):
         expected_sql = "SELECT * FROM s3object s WHERE s.__id__ LIKE 'ab%'"
         self.assertEqual(sql, expected_sql)
 
+    def test_sql_for_preview(self):
+        """
+        Test that we construct the proper SQL
+        commands when requesting a preview of a resource
+        """
+        t = TableResource()
+        query_params = {}
+        sql = t._construct_s3_query_sql(query_params, preview=True)
+        expected_sql = f'SELECT * FROM s3object s LIMIT {PREVIEW_NUM_LINES}'
+        self.assertEqual(sql, expected_sql)
+        
     def test_sql_combination_filter_commands(self):
         """
         Test that we construct the proper SQL
