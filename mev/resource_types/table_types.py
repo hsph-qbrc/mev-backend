@@ -809,6 +809,8 @@ class TableResource(DataResource):
         The dataframe allows the caller to subset as needed to 'paginate'
         the rows of the table
         '''
+        self.additional_exported_cols = []
+        
         if (settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON) and \
             (not self.requires_local_processing):
             try:
@@ -922,8 +924,6 @@ class TableResource(DataResource):
         contents and returns a pd.Dataframe
         '''
         self.read_resource(resource_instance, preview=preview)
-
-        self.additional_exported_cols = []
 
         # if there were any filtering params requested, apply those
         self.filter_against_query_params(query_params)

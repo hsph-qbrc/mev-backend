@@ -26,6 +26,8 @@ class TableResourceContentsTests(BaseAPITestCase):
         t.get_contents(mock_resource, {})
         mock_s3_contents.assert_called()
         mock_local_contents.assert_not_called()
+        # a check that we have this attribute defined:
+        self.assertTrue(len(t.additional_exported_cols) == 0)
 
         mock_s3_contents.reset_mock()
         mock_local_contents.reset_mock()
@@ -70,6 +72,7 @@ class TableResourceContentsTests(BaseAPITestCase):
         contents = m.get_contents(mock_resource, query_params)
         mock_s3_contents.assert_called()
         mock_local_contents.assert_not_called()
+        self.assertTrue(len(m.additional_exported_cols) == 0)
 
         # now change the query params to require an
         # aggregation that s3 does not offer
