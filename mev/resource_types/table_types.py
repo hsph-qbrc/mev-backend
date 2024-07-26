@@ -810,7 +810,7 @@ class TableResource(DataResource):
         the rows of the table
         '''
         self.additional_exported_cols = []
-        
+
         if (settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON) and \
             (not self.requires_local_processing):
             try:
@@ -899,7 +899,15 @@ class TableResource(DataResource):
                 logger.error('Failed to parse returned payload from S3 select as JSON.'
                     f' Writing results to {f}.')
                 raise ex
-            self.table = pd.DataFrame(q).set_index(FIRST_COLUMN_ID, drop=True)
+            
+            try:
+                self.table = pd.DataFrame(q).set_index(FIRST_COLUMN_ID, drop=True)
+            except KeyError as ex:
+                err_str = (f'Resource ({resource_instance.pk}) was missing the'
+                ' proper header for the first column')
+                logger.error(err_str)
+                alert_admins(err_str)
+                raise ex
 
         # the data returned by s3 select is all string-based. The child
         # class implementing the particular resource type should perform
