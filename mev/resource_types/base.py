@@ -65,7 +65,7 @@ class DataResource(object):
             RESOURCE_KEY: None
         }
 
-    def save_in_standardized_format(self, resource_path, file_format):
+    def save_in_standardized_format(self, resource_instance, file_format):
         '''
         This method is used for saving user-supplied resources/files as something
         we can consistently refer to. For instance, users may load csv, tsv, excel, etc.
@@ -74,7 +74,7 @@ class DataResource(object):
         file as a TSV so that all analyses can safely assume they will be given a valid
         TSV-format file.
 
-        In this base-class implementation, we don't do anything- just echo back.
+        In this base-class implementation, we don't do anything
         '''
-        return resource_path
+        return None
 

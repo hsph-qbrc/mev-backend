@@ -113,3 +113,12 @@ NUMERIC_OPERATORS = [
     ABS_VAL_LESS_THAN,
 ]
 
+# used for translating the GET query params (like "[lte]")
+# into SQL-compatible strings (like "<=" for "[lte]")
+NUMERIC_OPERATOR_SYMBOLS = {
+    LESS_THAN: '<',
+    LESS_THAN_OR_EQUAL: '<=',
+    GREATER_THAN: '>',
+    GREATER_THAN_OR_EQUAL: '>='
+}
+

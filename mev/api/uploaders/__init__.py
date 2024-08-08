@@ -23,5 +23,5 @@ def get_async_uploader(uploader_id):
         elif settings.STORAGE_LOCATION == settings.REMOTE:
             # If we are using remote storage, then we have to know
             # which cloud environment so we can use the proper uploader
-            if settings.CLOUD_PLATFORM == settings.AMAZON:
+            if settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON:
                 return DropboxAWSRemoteUpload()

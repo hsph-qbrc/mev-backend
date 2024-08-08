@@ -24,7 +24,7 @@ EMAIL_USE_TLS = True
 # By default (in base_settings.py), we set up console logging via
 # the `LOGGING` dictionary. Modify below:
 
-if CLOUD_PLATFORM == AMAZON:
+if WEBMEV_DEPLOYMENT_PLATFORM == AMAZON:
     boto3_logs_client = boto3.client("logs", region_name=get_env('AWS_REGION'))
     watchtower_params = {
         'class': 'watchtower.CloudWatchLogHandler',
