@@ -267,15 +267,7 @@ resource "aws_vpc_endpoint" "logs_endpoint" {
   private_dns_enabled = true
 }
 
-# Although we don't explicitly create a route table for the 
-# private subnets, it is created automatically and associated
-# with both
-# data "aws_route_table" "private_route_table" {
-#   vpc_id    = aws_vpc.main.id
-#   subnet_id = aws_subnet.private_a.id
-# }
-
-resource "aws_route_table" "private_route_table" {
+resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id 
   tags = {
     Name = "${local.common_tags.Name}-private-rt"
@@ -283,12 +275,12 @@ resource "aws_route_table" "private_route_table" {
 }
 
 resource "aws_route_table_association" "private_a" {
-  route_table_id = aws_route_table.private_route_table.id
+  route_table_id = aws_route_table.private.id
   subnet_id      = aws_subnet.private_a.id
 }
 
 resource "aws_route_table_association" "private_b" {
-  route_table_id = aws_route_table.private_route_table.id
+  route_table_id = aws_route_table.private.id
   subnet_id      = aws_subnet.private_b.id
 }
 
@@ -299,7 +291,7 @@ resource "aws_vpc_endpoint" "s3_gateway" {
   service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids = [
-    aws_route_table.private_route_table.id
+    aws_route_table.private.id
   ]
   tags = {
     Name = "${local.common_tags.Name}-s3-gateway"
