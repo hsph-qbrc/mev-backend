@@ -6,6 +6,9 @@ resource "aws_vpc" "main" {
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
+  tags = {
+    Name = "${local.common_tags.Name}-ig"
+  }
 }
 
 resource "aws_route_table" "public" {
@@ -17,6 +20,9 @@ resource "aws_route_table" "public" {
   route {
     ipv6_cidr_block = "::/0"
     gateway_id      = aws_internet_gateway.main.id
+  }
+  tags = {
+    Name = "${local.common_tags.Name}-public-rt"
   }
 }
 
@@ -271,6 +277,9 @@ resource "aws_vpc_endpoint" "logs_endpoint" {
 
 resource "aws_route_table" "private_route_table" {
   vpc_id = aws_vpc.main.id 
+  tags = {
+    Name = "${local.common_tags.Name}-private-rt"
+  }
 }
 
 resource "aws_route_table_association" "private_a" {
@@ -292,4 +301,7 @@ resource "aws_vpc_endpoint" "s3_gateway" {
   route_table_ids = [
     aws_route_table.private_route_table.id
   ]
+  tags = {
+    Name = "${local.common_tags.Name}-s3-gateway"
+  }
 }
