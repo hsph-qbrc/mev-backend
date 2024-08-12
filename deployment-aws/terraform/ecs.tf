@@ -22,7 +22,7 @@ resource "aws_iam_role" "ecs_task_role" {
 }
 
 resource "aws_iam_role_policy" "ecs_s3_access" {
-  name   = "AllowECSAccessToStorageBucket"
+  name   = "${local.common_tags.Name}-AllowECSAccessToStorageBucket"
   role   = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode(
@@ -43,7 +43,7 @@ resource "aws_iam_role_policy" "ecs_s3_access" {
 
 
 resource "aws_iam_role_policy" "efs_ap" {
-    name   = "EFSAccessPointForECS"
+    name   = "${local.common_tags.Name}-EFSAccessPointForECS"
     role   = "${aws_iam_role.ecs_task_role.id}"
   
     policy = jsonencode(
