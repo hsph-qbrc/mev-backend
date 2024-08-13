@@ -42,28 +42,6 @@ resource "aws_iam_role_policy" "ecs_s3_access" {
 }
 
 
-resource "aws_iam_role_policy" "efs_ap" {
-    name   = "${local.common_tags.Name}-EFSAccessPointForECS"
-    role   = "${aws_iam_role.ecs_task_role.id}"
-  
-    policy = jsonencode(
-      {
-        "Version": "2012-10-17",
-        "Statement": [
-          {
-            "Effect": "Allow",
-            "Action": ["elasticfilesystem:ClientMount", 
-                       "elasticfilesystem:ClientWrite"
-            ],
-            "Resource": aws_efs_file_system.efs.arn
-          }
-        ]
-      }
-    )
-  }
-
-
-
 # This role is given to the ECS service to handle the creation of
 # ECS tasks, etc.
 resource "aws_iam_role" "ecs_execution_role" {
