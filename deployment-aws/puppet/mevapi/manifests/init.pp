@@ -8,6 +8,9 @@
 class mevapi (
   String                  $admin_email_csv,
   String                  $aws_batch_queue,
+  String                  $aws_ecs_cluster,
+  String                  $aws_ecs_security_group,
+  String                  $aws_ecs_subnet,
   String                  $aws_region,
   Optional[String]        $app_user,
   String                  $backend_domain,

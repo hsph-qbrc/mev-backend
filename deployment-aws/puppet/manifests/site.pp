@@ -2,6 +2,9 @@ node /api/ {
   class { 'mevapi':
     admin_email_csv                => $facts['admin_email_csv'],
     aws_batch_queue                => $facts['aws_batch_queue'],
+    aws_ecs_cluster                => $facts['aws_ecs_cluster'],
+    aws_ecs_security_group         => $facts['aws_ecs_security_group'],
+    aws_ecs_subnet                 => $facts['aws_ecs_subnet'],
     aws_region                     => $facts['aws_region'],
     backend_domain                 => $facts['backend_domain'],
     cloudwatch_log_group           => $facts['cloudwatch_log_group'],
