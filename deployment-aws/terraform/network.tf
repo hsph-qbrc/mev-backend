@@ -159,22 +159,7 @@ resource "aws_security_group" "api_server" {
   }
 }
 
-# All the VPC endpoints get this security group which will allow
-# connections from ECS instances
-resource "aws_security_group" "endpoint_security_group" {
-  name        = "${local.common_tags.Name}-endpoint-sg"
-  description = "For endpoint to allow ecs communications"
-  vpc_id      = aws_vpc.main.id
-  ingress {
-    description      = "Allow ingress from ECS sg"
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    security_groups  = [aws_security_group.ecs_instance_security_group.id]
-  }
-}
-
-# The security group associatedc with the ephemerial ECS instances.
+# The security group associated with the ephemerial ECS instances.
 resource "aws_security_group" "ecs_instance_security_group" {
   name        = "${local.common_tags.Name}-ecs-sg"
   description = "Allow everything out, nothing in"
@@ -186,114 +171,5 @@ resource "aws_security_group" "ecs_instance_security_group" {
     protocol         = "-1"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
-  }
-}
-
-# For ECS instances launched into the private subnet, they can communicate
-# with the container registry via this vpc endpoint
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.${data.aws_region.current.name}.ecr.dkr"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        =  [aws_subnet.private_a.id, aws_subnet.private_b.id]
-  security_group_ids = [
-    aws_security_group.endpoint_security_group.id
-  ]
-  policy =<<POLICY
-  {
-    "Statement": [
-      {
-        "Sid": "AllowPull",
-        "Principal": {
-          "AWS": "${aws_iam_role.ecs_execution_role.arn}"
-        },
-        "Action": [
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetAuthorizationToken"
-        ],
-        "Effect": "Allow",
-        "Resource": "*"
-      }
-    ]
-  }
-  POLICY
-  private_dns_enabled = true
-}
-
-# For ECS instances launched into the private subnet, they can communicate
-# with the container registry via this vpc endpoint
-resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.${data.aws_region.current.name}.ecr.api"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        =  [aws_subnet.private_a.id, aws_subnet.private_b.id]
-  security_group_ids = [
-    aws_security_group.endpoint_security_group.id
-  ]
-  policy =<<POLICY
-  {
-    "Statement": [
-      {
-        "Sid": "AllowPull",
-        "Principal": {
-          "AWS": "${aws_iam_role.ecs_execution_role.arn}"
-        },
-        "Action": [
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetAuthorizationToken"
-        ],
-        "Effect": "Allow",
-        "Resource": "*"
-      }
-    ]
-  }
-  POLICY
-  private_dns_enabled = true
-}
-
-
-# Permits the ECS instances in the private subnet to communicate with 
-# logging mechanism
-resource "aws_vpc_endpoint" "logs_endpoint" {
-  vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.${data.aws_region.current.name}.logs"
-  vpc_endpoint_type = "Interface"
-  subnet_ids        =  [aws_subnet.private_a.id, aws_subnet.private_b.id]
-  security_group_ids = [
-    aws_security_group.endpoint_security_group.id
-  ]
-  private_dns_enabled = true
-}
-
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id 
-  tags = {
-    Name = "${local.common_tags.Name}-private-rt"
-  }
-}
-
-resource "aws_route_table_association" "private_a" {
-  route_table_id = aws_route_table.private.id
-  subnet_id      = aws_subnet.private_a.id
-}
-
-resource "aws_route_table_association" "private_b" {
-  route_table_id = aws_route_table.private.id
-  subnet_id      = aws_subnet.private_b.id
-}
-
-# To pull container image layers, the ECS instances need
-# access to S3 which we provide through a Gateway
-resource "aws_vpc_endpoint" "s3_gateway" {
-  vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids = [
-    aws_route_table.private.id
-  ]
-  tags = {
-    Name = "${local.common_tags.Name}-s3-gateway"
   }
 }

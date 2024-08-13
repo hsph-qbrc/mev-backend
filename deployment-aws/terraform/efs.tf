@@ -36,16 +36,16 @@ resource "aws_efs_access_point" "efs_ap" {
   }
 }
 
-# mount point in private subnet A
+# mount point in public subnet "public"
 resource "aws_efs_mount_target" "efs_mp_a" {
   file_system_id  = aws_efs_file_system.efs.id
-  subnet_id       = aws_subnet.private_a.id
+  subnet_id       = aws_subnet.public.id
   security_groups = [aws_security_group.efs_security_group.id]
 }
 
-# mount point in private subnet B
+# mount point in public subnet "extra"
 resource "aws_efs_mount_target" "efs_mp_b" {
   file_system_id  = aws_efs_file_system.efs.id
-  subnet_id       = aws_subnet.private_b.id
+  subnet_id       = aws_subnet.extra.id
   security_groups = [aws_security_group.efs_security_group.id]
 }
