@@ -5,6 +5,8 @@ node /api/ {
     aws_ecs_cluster                => $facts['aws_ecs_cluster'],
     aws_ecs_security_group         => $facts['aws_ecs_security_group'],
     aws_ecs_subnet                 => $facts['aws_ecs_subnet'],
+    aws_efs_access_point           => $facts['aws_efs_access_point'],
+    aws_efs_id                     => $facts['aws_efs_id'],
     aws_region                     => $facts['aws_region'],
     backend_domain                 => $facts['backend_domain'],
     cloudwatch_log_group           => $facts['cloudwatch_log_group'],

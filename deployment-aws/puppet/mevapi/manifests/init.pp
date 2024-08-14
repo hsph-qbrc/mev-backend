@@ -11,6 +11,8 @@ class mevapi (
   String                  $aws_ecs_cluster,
   String                  $aws_ecs_security_group,
   String                  $aws_ecs_subnet,
+  String                  $aws_efs_access_point,
+  String                  $aws_efs_id,
   String                  $aws_region,
   Optional[String]        $app_user,
   String                  $backend_domain,

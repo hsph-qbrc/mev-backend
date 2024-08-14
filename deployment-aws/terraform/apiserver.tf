@@ -209,6 +209,8 @@ resource "aws_instance" "api" {
   export FACTER_AWS_ECS_CLUSTER='${aws_ecs_cluster.ecs.name}'
   export FACTER_AWS_ECS_SECURITY_GROUP='${aws_security_group.ecs_instance_security_group.name}'
   export FACTER_AWS_ECS_SUBNET='${aws_subnet.public.id}'
+  export FACTER_AWS_EFS_ACCESS_POINT='${aws_efs_access_point.efs_ap.id}'
+  export FACTER_AWS_EFS_ID='${aws_efs_file_system.efs.id}'
   export FACTER_AWS_REGION='${data.aws_region.current.name}'
   export FACTER_BACKEND_DOMAIN='${var.backend_domain}'
   export FACTER_CLOUDWATCH_LOG_GROUP='${aws_cloudwatch_log_group.default.name}'
