@@ -206,9 +206,9 @@ resource "aws_instance" "api" {
   # configure and run Puppet
   export FACTER_ADMIN_EMAIL_CSV='${var.admin_email_csv}'
   export FACTER_AWS_BATCH_QUEUE='${aws_batch_job_queue.nextflow.name}'
-  export AWS_ECS_CLUSTER='${aws_ecs_cluster.ecs.name}'
-  export AWS_ECS_SECURITY_GROUP='${aws_security_group.ecs_instance_security_group.name}'
-  export AWS_ECS_SUBNET='${aws_subnet.public.id}'
+  export FACTER_AWS_ECS_CLUSTER='${aws_ecs_cluster.ecs.name}'
+  export FACTER_AWS_ECS_SECURITY_GROUP='${aws_security_group.ecs_instance_security_group.name}'
+  export FACTER_AWS_ECS_SUBNET='${aws_subnet.public.id}'
   export FACTER_AWS_REGION='${data.aws_region.current.name}'
   export FACTER_BACKEND_DOMAIN='${var.backend_domain}'
   export FACTER_CLOUDWATCH_LOG_GROUP='${aws_cloudwatch_log_group.default.name}'
