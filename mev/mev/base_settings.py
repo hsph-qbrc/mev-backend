@@ -277,6 +277,16 @@ if get_env('ENABLE_REMOTE_JOB_RUNNERS') == 'yes':
     # TODO: make these variable:
     NEXTFLOW_EXE = '/opt/nextflow'
     NEXTFLOW_STATUS_UPDATE_URL = 'http://127.0.0.1:8080/api/nextflow/status-update/'
+
+    # variables related to ECS-based runner:
+    AWS_ECS_CLUSTER = get_env('AWS_ECS_CLUSTER')
+    AWS_ECS_EXECUTION_ROLE = get_env('AWS_ECS_EXECUTION_ROLE')
+    AWS_ECS_SECURITY_GROUP = get_env('AWS_ECS_SECURITY_GROUP')
+    AWS_ECS_SUBNET = get_env('AWS_ECS_SUBNET')
+    AWS_ECS_TASK_ROLE = get_env('AWS_ECS_TASK_ROLE')
+    AWS_EFS_ACCESS_POINT = get_env('AWS_EFS_ACCESS_POINT')
+    AWS_EFS_ID = get_env('AWS_EFS_ID')
+
 else:
     ENABLE_REMOTE_JOBS = False
 
