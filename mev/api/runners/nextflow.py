@@ -115,10 +115,7 @@ class NextflowRunner(OperationRunner):
 
     def run(self, executed_op, op, validated_inputs):
         logger.info(f'Executing job using Nextflow runner.')
-        logger.info(f'Executed op type: {type(executed_op)}')
-        logger.info(f'Executed op ID: {executed_op.id}')
-        logger.info(f'Op data: {op.to_dict()}')
-        logger.info(f'Validated inputs: {validated_inputs}')
+        super().run(executed_op, op, validated_inputs)
 
         # the UUID identifying the execution of this operation:
         execution_uuid = str(executed_op.id)

@@ -1,4 +1,5 @@
 import os
+import uuid
 import logging
 from shutil import rmtree
 
@@ -47,7 +48,6 @@ class OperationRunner(object):
         '''
         pass
 
-
     def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
         Used during ingestion to perform setup/prep before an operation can 
@@ -57,6 +57,15 @@ class OperationRunner(object):
         execution mode.
         '''
         pass
+
+    def run(self, executed_op, op, validated_inputs):
+        '''
+        Used to start a job execution. Does nothing unless
+        overidden.
+        '''
+        logger.info(f'Executed op ID: {executed_op.id}')
+        logger.info(f'Op data: {op.to_dict()}')
+        logger.info(f'Validated inputs: {validated_inputs}')
 
     def check_required_files(self, operation_dir):
         '''
