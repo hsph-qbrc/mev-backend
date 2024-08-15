@@ -38,7 +38,7 @@ from api.converters.data_resource import \
     LocalDockerCsvResourceConverter, \
     LocalDockerSpaceDelimResourceConverter, \
     RemoteNextflowSingleDataResourceConverter, \
-    RemoteNextflowResourceMixin, \
+    RemoteResourceMixin, \
     RemoteNextflowSingleVariableDataResourceConverter
     # RemoteNextflowMultipleDataResourceConverter, \
 
@@ -801,7 +801,7 @@ class TestLocalResourceMixin(BaseAPITestCase):
                 workspace=mock_workspace
             )
 
-class TestRemoteNextflowResourceMixin(BaseAPITestCase):
+class TestRemoteResourceMixin(BaseAPITestCase):
 
     @mock.patch('api.converters.data_resource.default_storage')
     def test_create_workspace_resource(self, mock_default_storage):
@@ -818,7 +818,7 @@ class TestRemoteNextflowResourceMixin(BaseAPITestCase):
         mock_path = '/some/path/file.txt'
         mock_name = 'abc'
 
-        c = RemoteNextflowResourceMixin()
+        c = RemoteResourceMixin()
         r = c._create_resource(mock_executed_op, mock_workspace, mock_path, mock_name)
         self.assertEqual(r, mock_resource)
         mock_create_resource_from_interbucket_copy.assert_called_once_with(
@@ -847,7 +847,7 @@ class TestRemoteNextflowResourceMixin(BaseAPITestCase):
         mock_path = '/some/path/file.txt'
         mock_name = 'abc'
 
-        c = RemoteNextflowResourceMixin()
+        c = RemoteResourceMixin()
         r = c._create_resource(mock_executed_op, None, mock_path, mock_name)
         self.assertEqual(r, mock_resource)
         mock_create_resource_from_interbucket_copy.assert_called_once_with(

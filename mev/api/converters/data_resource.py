@@ -356,10 +356,12 @@ class LocalResourceMixin(object):
         )
 
 
-class RemoteNextflowResourceMixin(object):
+class RemoteResourceMixin(object):
     '''
     Contains behavior for DataResource conversion related to
-    the remote Nextflow runner.
+    the remote storage (bucket). Can be used with Nextflow
+    or ECS-based runners which directly access files stored
+    in buckets.
     '''
 
     def _convert_resource_input(self, resource_uuid, staging_dir):
@@ -619,7 +621,7 @@ class LocalDockerSpaceDelimResourceConverter(
 
 class RemoteNextflowSingleDataResourceConverter(
     BaseResourceConverter,
-    RemoteNextflowResourceMixin,
+    RemoteResourceMixin,
     SingleDataResourceMixin,
     DataResourceMixin
 ):
@@ -660,7 +662,7 @@ class RemoteNextflowSingleDataResourceConverter(
 
 class RemoteNextflowSingleVariableDataResourceConverter(
     BaseResourceConverter,
-    RemoteNextflowResourceMixin,
+    RemoteResourceMixin,
     SingleDataResourceMixin,
     VariableDataResourceMixin
 ):

@@ -6,6 +6,8 @@ from shutil import rmtree
 from django.conf import settings
 from django.utils.module_loading import import_string
 
+from jinja2 import Template
+
 from exceptions import OutputConversionException, \
     MissingRequiredFileException
 
@@ -239,3 +241,26 @@ class OperationRunner(object):
         execution_dir = os.path.join(
             settings.OPERATION_EXECUTION_DIR, str(job_id))
         rmtree(execution_dir)
+
+
+class TemplatedCommandMixin(object):
+
+    def _get_entrypoint_command(self, entrypoint_file_path, arg_dict):
+        '''
+        Takes the entrypoint command file (a template) and the input
+        args and returns a formatted string which will be used as the 
+        command for the Docker container.
+        '''
+        # read the template command
+        entrypoint_cmd_template = Template(
+            open(entrypoint_file_path, 'r').read())
+        try:
+            entrypoint_cmd = entrypoint_cmd_template.render(arg_dict)
+            return entrypoint_cmd
+        except Exception as ex:
+            logger.error('An exception was raised when constructing the'
+                         ' entrypoint command from the templated string.'
+                         f' Exception was: {ex}')
+            raise Exception('Failed to construct command to execute'
+                            ' local Docker container. See logs.'
+                            )

@@ -3,11 +3,10 @@ import json
 import datetime
 import logging
 
-from jinja2 import Template
-
 from django.conf import settings
 
-from api.runners.base import OperationRunner
+from api.runners.base import OperationRunner, \
+    TemplatedCommandMixin
 from api.utilities.docker import check_if_container_running, \
     check_container_exit_code, \
     get_finish_datetime, \
@@ -22,7 +21,7 @@ from api.models import ExecutedOperation
 logger = logging.getLogger(__name__)
 
 
-class LocalDockerRunner(OperationRunner):
+class LocalDockerRunner(OperationRunner, TemplatedCommandMixin):
     '''
     Class that handles execution of `Operation`s using Docker on the local
     machine
@@ -161,26 +160,6 @@ class LocalDockerRunner(OperationRunner):
         '''
         image_url = get_image_name_and_tag(repo_name, git_hash)
         pull_image(image_url)
-
-    def _get_entrypoint_command(self, entrypoint_file_path, arg_dict):
-        '''
-        Takes the entrypoint command file (a template) and the input
-        args and returns a formatted string which will be used as the 
-        ENTRYPOINT command for the Docker container.
-        '''
-        # read the template command
-        entrypoint_cmd_template = Template(
-            open(entrypoint_file_path, 'r').read())
-        try:
-            entrypoint_cmd = entrypoint_cmd_template.render(arg_dict)
-            return entrypoint_cmd
-        except Exception as ex:
-            logger.error('An exception was raised when constructing the'
-                         ' entrypoint command from the templated string.'
-                         f' Exception was: {ex}')
-            raise Exception('Failed to construct command to execute'
-                            ' local Docker container. See logs.'
-                            )
 
     def run(self, executed_op, op, validated_inputs):
         logger.info('Running in local Docker mode.')
