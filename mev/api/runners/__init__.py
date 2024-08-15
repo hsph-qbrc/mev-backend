@@ -6,6 +6,7 @@ from .local_docker import LocalDockerRunner
 from .nextflow import LocalNextflowRunner, \
     AWSBatchNextflowRunner
 from .remote_cromwell import RemoteCromwellRunner
+from .ecs import ECSRunner
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,8 @@ RUNNER_MAPPING = {
     LocalDockerRunner.NAME: LocalDockerRunner,
     AWSBatchNextflowRunner.NAME: AWSBatchNextflowRunner,
     LocalNextflowRunner.NAME: LocalNextflowRunner,
-    RemoteCromwellRunner.NAME: RemoteCromwellRunner
+    RemoteCromwellRunner.NAME: RemoteCromwellRunner,
+    ECSRunner.NAME: ECSRunner
 }
 AVAILABLE_RUNNERS = list(RUNNER_MAPPING.keys())
 
