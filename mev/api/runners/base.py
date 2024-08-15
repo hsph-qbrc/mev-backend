@@ -48,7 +48,7 @@ class OperationRunner(object):
         pass
 
 
-    def prepare_operation(self, operation_dir, repo_name, git_hash):
+    def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
         Used during ingestion to perform setup/prep before an operation can 
         be executed. Use for things like building docker images, etc.

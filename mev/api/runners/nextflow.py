@@ -56,7 +56,7 @@ class NextflowRunner(OperationRunner):
 
     JOB_PREFIX = 'job_'
 
-    def prepare_operation(self, operation_dir, repo_name, git_hash):
+    def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
 
         container_image_names = get_container_names(operation_dir)
         logger.info('Found the following image names among the'

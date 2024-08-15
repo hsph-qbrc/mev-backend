@@ -149,7 +149,7 @@ class LocalDockerRunner(OperationRunner):
         executed_op.save()
         return
 
-    def prepare_operation(self, operation_dir, repo_name, git_hash):
+    def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
         Prepares the Operation, including pulling the Docker container
 
