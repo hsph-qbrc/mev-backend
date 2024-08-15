@@ -260,3 +260,7 @@ class ECSRunner(OperationRunner):
                 }
             ]
         }
+
+    def run(self, executed_op, op, validated_inputs):
+        logger.info(f'Executing job using ECS runner.')
+        super().run(executed_op, op, validated_inputs)
