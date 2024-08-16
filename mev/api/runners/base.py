@@ -251,6 +251,12 @@ class TemplatedCommandMixin(object):
         args and returns a formatted string which will be used as the 
         command for the Docker container.
         '''
+        if not os.path.exists(entrypoint_file_path):
+            err_msg = ('Could not find the required entrypoint'
+                f' file at {entrypoint_file_path}.')
+            logger.error(err_msg)
+            raise Exception(err_msg)
+            
         # read the template command
         entrypoint_cmd_template = Template(
             open(entrypoint_file_path, 'r').read())
