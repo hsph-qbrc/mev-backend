@@ -728,3 +728,56 @@ class RemoteNextflowSingleVariableDataResourceConverter(
 #         '''
 #         return self._convert_output(
 #             executed_op, workspace, output_definition, output_val)
+
+class ECSSingleDataResourceConverter(
+    BaseResourceConverter,
+    RemoteResourceMixin,
+    SingleDataResourceMixin,
+    DataResourceMixin
+):
+    '''
+    This converter (for inputs) takes a DataResource instance (for a single file,
+    which is simply a UUID) and returns the path to 
+    the file in cloud storage.
+
+    Note that if remote execution is enabled, we do not allow local storage, 
+    so we do not need to handle cases where we might have to push a 
+    local file into cloud-based storage.
+    '''
+
+    def convert_input(self, user_input, op_dir, staging_dir):
+        return self._convert_resource_input(user_input, staging_dir)
+
+    def convert_output(
+            self, executed_op, workspace, output_definition, output_val):
+        '''
+        This converts a single output resource (a path) to a Resource instance
+        and returns the pk/UUID for that newly created database resource.
+        '''
+        # TODO: implement
+        raise NotImplementedError()
+
+
+class ECSSingleVariableDataResourceConverter(
+    BaseResourceConverter,
+    RemoteResourceMixin,
+    SingleDataResourceMixin,
+    VariableDataResourceMixin
+):
+    '''
+    This converter takes a VariableDataResource instance 
+    (for a single file,which is simply a UUID) and returns 
+    the path to the file in cloud storage.
+    '''
+
+    def convert_input(self, user_input, op_dir, staging_dir):
+        return self._convert_resource_input(user_input, staging_dir)
+
+    def convert_output(
+            self, executed_op, workspace, output_definition, output_val):
+        '''
+        This converts a single output resource (a path) to a Resource instance
+        and returns the pk/UUID for that newly created database resource.
+        '''
+        # TODO: implement
+        raise NotImplementedError()

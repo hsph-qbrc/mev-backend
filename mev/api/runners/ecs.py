@@ -1,21 +1,27 @@
 import logging
 import os
 import json
+import uuid
+import datetime
 
 from django.conf import settings
 
 import boto3
 
-from api.runners.base import OperationRunner
-from api.models import ECSTask
-
+from api.runners.base import OperationRunner, \
+    TemplatedCommandMixin
+from api.models import ECSTaskDefinition
 from api.utilities.docker import check_image_exists, \
     get_image_name_and_tag
+from api.utilities.admin_utils import alert_admins
+from exceptions import JobSubmissionException
+
+from data_structures.data_resource_attributes import get_all_data_resource_typenames
 
 logger = logging.getLogger(__name__)
 
 
-class ECSRunner(OperationRunner):
+class ECSRunner(OperationRunner, TemplatedCommandMixin):
     '''
     Handles execution of `Operation`s using AWS 
     Elastic Container Service
@@ -27,10 +33,10 @@ class ECSRunner(OperationRunner):
     # Used when pulling/pushing files from S3
     AWS_CLI_IMAGE = 'amazon/aws-cli:latest'
 
-    # used to 'name' the step performing the analysis
-    # and used to establish the dependency chain of
-    # steps comprising an ECS task
+    # used to 'name' the steps comprising an ECS task
     ANALYSIS_CONTAINER_NAME = 'analysis'
+    FILE_RETRIEVER = 'file-retriever'
+    FILE_PUSHER = 'file-pusher'
 
     # a consistent reference for the 'alias' of the EFS volume
     # which is shared between the steps of the ECS task
@@ -48,6 +54,10 @@ class ECSRunner(OperationRunner):
         ENTRYPOINT_FILE
     ]
 
+    # For consistent reference to the EFS volume which is shared
+    # across the ECS task
+    EFS_DATA_DIR = '/data'
+
     # in the resources JSON file, we need to know the cpu and memory
     # (and possibly other parameters). This provides a consistent 
     # reference to these keys so we can address them
@@ -55,6 +65,11 @@ class ECSRunner(OperationRunner):
     MEM_KEY = 'mem_mb'
     REQUIRED_RESOURCE_KEYS = [CPU_KEY, MEM_KEY]
 
+    # Note the path of the AWS CLI in the Docker image:
+    AWS_CP_TEMPLATE = '/usr/local/bin/aws s3 cp {src} {dest}'
+
+    def _get_ecs_client(self):
+        return boto3.client('ecs')
 
     def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
@@ -69,7 +84,7 @@ class ECSRunner(OperationRunner):
         task_arn = self._register_new_task(repo_name, operation_dir, image_url)
         
         # associate the task ARN with the Operation object in the database
-        ECSTask.objects.create(task_arn=task_arn, operation=operation_db_obj)
+        ECSTaskDefinition.objects.create(task_arn=task_arn, operation=operation_db_obj)
 
     def _check_for_image(self, repo_name, git_hash):
         image_url = get_image_name_and_tag(repo_name, git_hash)
@@ -101,7 +116,7 @@ class ECSRunner(OperationRunner):
         '''
         container_definitions = self._get_container_defs(op_dir, image_url)
 
-        client = boto3.client('ecs')
+        client = self._get_ecs_client()
         try:
             response = client.register_task_definition(
                 family=repo_name,
@@ -174,13 +189,13 @@ class ECSRunner(OperationRunner):
             "mountPoints": [
                 {
                     "sourceVolume": ECSRunner.EFS_VOLUME_ALIAS,
-                    "containerPath": "/data",
+                    "containerPath": ECSRunner.EFS_DATA_DIR,
                     "readOnly": False
                 }
             ],
             "dependsOn": [
                 {
-                    "containerName": "file-retriever",
+                    "containerName": ECSRunner.FILE_RETRIEVER,
                     "condition": "SUCCESS"
                 }
             ]
@@ -200,14 +215,17 @@ class ECSRunner(OperationRunner):
         is pulled
         '''
         return {
-            "name": "file-retriever",
+            "name": ECSRunner.FILE_RETRIEVER,
             "image": ECSRunner.AWS_CLI_IMAGE,
             # 0.25 vCPU and 0.5 GB RAM
             # see https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definitions
             "cpu": 256, 
             "memory": 512,
             "essential": False,
-
+            "entryPoint": [
+                "sh",
+                "-c"
+            ],
             # this command is overridden when the task
             # is called, so this command is simply a clue
             # for what it does.
@@ -220,7 +238,7 @@ class ECSRunner(OperationRunner):
             "mountPoints": [
                 {
                     "sourceVolume": ECSRunner.EFS_VOLUME_ALIAS,
-                    "containerPath": "/data",
+                    "containerPath": ECSRunner.EFS_DATA_DIR,
                     "readOnly": False
                 }
             ]
@@ -229,14 +247,17 @@ class ECSRunner(OperationRunner):
     def _get_file_push_container_definition(self):
 
         return {
-            "name": "file-pusher",
+            "name": ECSRunner.FILE_PUSHER,
             "image": ECSRunner.AWS_CLI_IMAGE,
             # 0.25 vCPU and 0.5 GB RAM
             # see https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definitions
             "cpu": 256, 
             "memory": 512,
             "essential": True,
-            
+            "entryPoint": [
+                "sh",
+                "-c"
+            ],
             # this command is overridden when the task
             # is called, so this command is simply a clue
             # for what it does.
@@ -249,7 +270,7 @@ class ECSRunner(OperationRunner):
             "mountPoints": [
                 {
                     "sourceVolume": ECSRunner.EFS_VOLUME_ALIAS,
-                    "containerPath": "/data",
+                    "containerPath": ECSRunner.EFS_DATA_DIR,
                     "readOnly": True
                 }
             ],
@@ -264,3 +285,196 @@ class ECSRunner(OperationRunner):
     def run(self, executed_op, op, validated_inputs):
         logger.info(f'Executing job using ECS runner.')
         super().run(executed_op, op, validated_inputs)
+
+        # the UUID identifying the execution of this operation:
+        execution_uuid = str(executed_op.id)
+
+        # get the operation dir so we can look at which converters and command to use:
+        op_dir = os.path.join(
+            settings.OPERATION_LIBRARY_DIR,
+            str(op.id)
+        )
+
+        # create a sandbox directory where we will stage for potential debugging:
+        staging_dir = self._create_execution_dir(execution_uuid)
+
+        # convert user inputs to something compatible with ECS.
+        # For example, take file inputs and map them from the resource UUID
+        # to a bucket-based path 
+        arg_dict = self._convert_inputs(
+            op, op_dir, validated_inputs, staging_dir)
+
+        logger.info('After mapping the user inputs, we have the'
+                    f' following structure: {arg_dict}')
+
+        # Since we ultimately have to use an AWS cli container to copy
+        # bucket-based files to EFS (such that ECS can "share" files between steps
+        # of the task), we need to construct those copy commands
+        # as an override. We will assign those copied files to unique
+        # file paths (e.g. aws s3 cp s3://some-bucket/file.tsv /data/<UUID>).
+        # Note, however, that we need to know those UUIDs so we can provide a proper
+        # command template for the override in the main analysis container.
+        file_mapping = self._create_file_mapping(op, arg_dict)
+
+        # create the copy commands for the inputs:
+        input_copy_overrides = self._create_input_copy_overrides(arg_dict, file_mapping)
+
+        # Construct the command that will be run in the container.
+        # Recall that if the operation includes file-like objects,
+        # the `arg_dict` has bucket-based paths while `file_mapping`
+        # has the paths on the EFS volume. The command needs the latter.
+        # This union operation replaces the s3 paths with local efs paths
+        arg_dict_for_container = arg_dict | file_mapping
+        entrypoint_file_path = os.path.join(op_dir, self.ENTRYPOINT_FILE)
+        entrypoint_cmd = self._get_entrypoint_command(
+            entrypoint_file_path, arg_dict_for_container)
+
+        output_copy_overrides = self._create_output_copy_overrides()
+
+        # get the most recent task ARN associated with this operation
+        task_def_arn = self._get_task_definition_arn(op.id)
+        self._submit_to_ecs(executed_op,
+                            task_def_arn, 
+                            input_copy_overrides,
+                            entrypoint_cmd,
+                            output_copy_overrides)
+
+    def _get_task_definition_arn(self, op_pk):
+        task_def = ECSTaskDefinition.objects.filter(operation__pk = op_pk).order_by('-revision_date')[0]
+        return task_def.task_arn
+
+    def _submit_to_ecs(self, 
+                       executed_op,
+                       task_def_arn,
+                       input_copy_overrides,
+                       entrypoint_cmd,
+                       output_copy_overrides):
+
+        overrides = {
+            'containerOverrides': [
+                    {
+                        'name': ECSRunner.FILE_RETRIEVER,
+                        'command': input_copy_overrides
+                    },
+                    {
+                        'name': ECSRunner.ANALYSIS_CONTAINER_NAME,
+                        'command': entrypoint_cmd
+                    },
+                    {
+                        'name': ECSRunner.FILE_PUSHER,
+                        'command': output_copy_overrides
+                    }
+                ]
+        }
+
+        client = self._get_ecs_client()
+        response = client.run_task(
+            taskDefinition=task_def_arn,
+            cluster=settings.AWS_ECS_CLUSTER,
+            count=1,
+            launchType='FARGATE',
+            platformVersion='LATEST',
+            networkConfiguration={
+                'awsvpcConfiguration': {
+                    'subnets': [settings.AWS_ECS_SUBNET],
+                    'securityGroups': [
+                        settings.AWS_ECS_SECURITY_GROUP
+                    ],
+                    'assignPublicIp': 'ENABLED',
+                }
+            },
+            overrides=overrides,
+        )
+        self._handle_ecs_submission_response(executed_op, response)
+
+    def _handle_ecs_submission_response(self, executed_op, response):
+        try:
+            task_id = response['tasks'][0]['taskArn']
+            executed_op.job_id = task_id
+            executed_op.save()
+        except Exception as ex:
+            logger.error('Encountered an unexpected data structure in'
+                f' response from ECS. Exception was {ex}')
+            self._handle_submission_problem(executed_op)
+
+    def _handle_submission_problem(self, executed_op):
+        executed_op.execution_start_datetime = datetime.datetime.now()
+        executed_op.execution_stop_datetime = datetime.datetime.now()
+        executed_op.status = 'Job submission failed. An admin has been notified.'
+        executed_op.job_failed = True
+        executed_op.save()
+        alert_admins('There was an issue with job submission for executed'
+            f' operation with id: {executed_op.id}')
+        raise JobSubmissionException()
+
+    def _create_output_copy_overrides(self):
+        return []
+        
+    def _create_file_mapping(self, op, arg_dict):
+        '''
+        When we submit jobs to ECS, the first step is to copy file resources
+        onto the EFS volume. This function creates a mapping from the
+        bucket-based path to a unique identifier. In this way, we can
+        consistently refer to the same files in our command.
+
+        As as example, consider the following `arg_dict`:
+        {
+            'input_A': 2, 
+            'input_B': 's3://bucket/obj.tsv', 
+            'input_C': 's3://bucket/another_obj.tsv'
+        }
+        When we perform a copy in the first step of the ECS task,
+        we ultimately make a call like 'aws s3 cp s3://bucket/obj.tsv /data/<UUID1>'
+        and 'aws s3 cp s3://bucket/another_obj.tsv /data/<UUID2>'
+        However, we need to keep track that the file named UUID1 corresponds
+        to input_B, etc. This way, when the command is run, e.g.
+        <some script> -i <UUID1> -j <UUID2>, the inputs are correctly associated
+        with the command arguments.
+        '''
+        mapping = {}
+        op_inputs = op.inputs
+        for k,v in arg_dict.items():
+            # look at the specification for this input to check if it's file-like
+            op_input = op_inputs[k]
+            spec = op_input.spec.to_dict()
+            if spec['attribute_type'] in get_all_data_resource_typenames():
+                if spec['many']:
+                    assert(type(v) is list)
+                    mapping[k] = [f'{ECSRunner.EFS_DATA_DIR}/{str(uuid.uuid4())}' for _ in v ]
+                else:
+                    assert(type(v) is str)
+                    mapping[k] = f'{ECSRunner.EFS_DATA_DIR}/{str(uuid.uuid4())}'
+        return mapping
+
+    def _create_input_copy_overrides(self, arg_dict, file_mapping):
+        '''
+        This method constructs the override command which is run as 
+        the first step of the ECS task.
+
+        `arg_dict` has the converted inputs
+        `file_mapping` maps the file-like inputs to unique
+                       identifiers 
+        '''
+        cp_commands = []
+        for input_key, mapped_val in file_mapping.items():
+
+            # the converted inputs. Could be a single s3 path
+            # or a list of s3 paths
+            src = arg_dict[input_key]
+
+            # if a single path, simply put into a list
+            # so we can process everything in the same way
+            if type(src) is str:
+                src = [src]
+                mapped_val = [mapped_val]
+
+            for i,s in enumerate(src):
+                dest = mapped_val[i]
+                cp_commands.append(ECSRunner.AWS_CP_TEMPLATE.format(
+                    src = s,
+                    dest = dest
+                ))
+        return ['/bin/sh', '-c', ' && '.join(cp_commands)]
+
+    def check_status(self, job_uuid):
+        pass

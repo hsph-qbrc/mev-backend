@@ -1,0 +1,87 @@
+{
+    "id": "76c9b2d7-5798-4d15-beb2-c172bbede013",
+    "name": "SNF (Similarity Network Fusion)", 
+    "description": "SNF is a method that leverages multiple genomic data types (e.g. transcriptome, methylation, etc.) to determine sample-to-sample networks enabling improved clustering and subtype detection. Further information is available at <a href=\"https://www.nature.com/articles/nmeth.2810\">https://www.nature.com/articles/nmeth.2810</a><br/>Note that for this version in WebMeV, we require that all input files have the columns/samples ordered in the same manner. For example column k of an expression matrix corresponds to column k of a methylation matrix. To annotate the final samples, we use the column names from the \"primary\" input matrix. For the other files, we ignore the column/sample lines and assume everything is ordered appropriately. This may change in the future.", 
+    "inputs": {
+        "primary_matrix": {
+            "description": "The primary input matrix, whose column/sample names will determine the sample names in the analysis outputs. Since SNF works with multiple data types which may not share column identifiers, we require that one input act as the \"key\". Do NOT choose this file again for the other file input.", 
+            "name": "Primary matrix:", 
+            "required": true, 
+            "converter": "api.converters.data_resource.LocalDockerSingleVariableDataResourceConverter",
+            "spec": {
+                "attribute_type": "VariableDataResource", 
+                "resource_types": ["I_MTX", "RNASEQ_COUNT_MTX", "MTX", "EXP_MTX"], 
+                "many": false
+            }
+        },
+        "input_matrices": {
+            "description": "The remainder of your input data. SNF can work with multiple data types such as expression, methylation, miRNA expression- essentially any data that can be put into a numeric table. Select as many files as you would like to include. Note that we assume all the files have the same column ordering. Do NOT include the same file that you included as the \"primary\" matrix.", 
+            "name": "Input matrices:", 
+            "required": true, 
+            "converter": "api.converters.data_resource.LocalDockerMultipleVariableDataResourceConverter",
+            "spec": {
+                "attribute_type": "VariableDataResource", 
+                "resource_types": ["I_MTX", "RNASEQ_COUNT_MTX", "MTX", "EXP_MTX"], 
+                "many": true
+            }
+        },
+        "num_neighbors": {
+            "description": "How many neighbors are considered when clustering? The SNF authors recommend a number in the range of 10-30", 
+            "name": "Neighbors:", 
+            "required": true, 
+            "converter": "api.converters.basic_attributes.IntegerConverter",
+            "spec": {
+                "attribute_type": "IntegerOption", 
+                "options": [10,15,20, 25, 30],
+                "default": 20
+            }
+        },
+        "alpha": {
+            "description": "The parameter controls the weights in the matrix of sample-to-sample similarities; the authors recommend 0.3-0.8. See paper for further details.", 
+            "name": "Scaling parameter:", 
+            "required": true, 
+            "converter": "api.converters.basic_attributes.FloatConverter",
+            "spec": {
+                "attribute_type": "FloatOption", 
+                "options": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                "default": 0.5
+            }
+        },
+        "num_clusters": {
+            "description": "The number of patient clusters you expect. After computing the subject-to-subject similarities from all data types, SNF uses spectral clustering to assign the clusters.", 
+            "name": "Number of clusters:", 
+            "required": true, 
+            "converter": "api.converters.basic_attributes.IntegerConverter",
+            "spec": {
+                "attribute_type": "BoundedInteger", 
+                "min": 2,
+                "max": 50
+            }
+        }
+    }, 
+    "outputs": {
+        "snf_similarity": {
+            "required": true,
+            "converter": "api.converters.data_resource.LocalDockerSingleDataResourceConverter",
+            "spec": {
+                "attribute_type": "DataResource", 
+                "resource_type": "NS",
+                "many": false
+            }
+        },
+        "snf_clustering": {
+            "required": true,
+            "converter": "api.converters.data_resource.LocalDockerSingleDataResourceConverter",
+            "spec": {
+                "attribute_type": "DataResource", 
+                "resource_type": "FT",
+                "many": false
+            }
+        }
+    }, 
+    "mode": "local_docker",
+    "repository_url": "https://github.com/myorg/myrepo.git",
+    "repository_name": "github",
+    "git_hash": "abc123",
+    "workspace_operation": true
+}

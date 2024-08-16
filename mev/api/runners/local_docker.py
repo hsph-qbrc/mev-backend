@@ -194,13 +194,6 @@ class LocalDockerRunner(OperationRunner, TemplatedCommandMixin):
 
         # Construct the command that will be run in the container:
         entrypoint_file_path = os.path.join(op_dir, self.ENTRYPOINT_FILE)
-        if not os.path.exists(entrypoint_file_path):
-            logger.error('Could not find the required entrypoint'
-                f' file at {entrypoint_file_path}.'
-                ' Something must have corrupted the operation directory.')
-            raise Exception('The repository must have been corrupted.'
-                            ' Failed to find the entrypoint file.'
-                            f' Check dir at: {op_dir}')
         entrypoint_cmd = self._get_entrypoint_command(
             entrypoint_file_path, arg_dict)
 

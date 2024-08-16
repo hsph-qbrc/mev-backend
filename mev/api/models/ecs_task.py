@@ -3,7 +3,7 @@ from django.db import models
 from api.models import Operation
 
 
-class ECSTask(models.Model):
+class ECSTaskDefinition(models.Model):
     '''
     Tracks association between WebMEV api.models.Operation
     and the task ARN.
