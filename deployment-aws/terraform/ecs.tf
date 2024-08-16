@@ -31,9 +31,16 @@ resource "aws_iam_role_policy" "ecs_s3_access" {
       "Statement": [
         {
           "Effect": "Allow",
-          "Action": ["s3:GetObject", "s3:PutObject", "s3:PutObjectAcl"],
+          "Action": ["s3:GetObject"],
           "Resource": ["arn:aws:s3:::${aws_s3_bucket.api_storage_bucket.id}", 
                        "arn:aws:s3:::${aws_s3_bucket.api_storage_bucket.id}/*"
+          ]
+        },
+        {
+          "Effect": "Allow",
+          "Action": ["s3:GetObject", "s3:PutObject", "s3:PutObjectAcl"],
+          "Resource": ["arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}", 
+                       "arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}/*"
           ]
         }
       ]
