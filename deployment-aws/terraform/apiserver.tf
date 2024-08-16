@@ -31,7 +31,7 @@ resource "aws_iam_role_policy" "server_s3_access" {
           Action   = ["s3:GetObject", "s3:PutObject", "s3:PutObjectAcl", "s3:DeleteObject"],
           Resource = [
             "arn:aws:s3:::${aws_s3_bucket.api_storage_bucket.id}/*",
-            "arn:aws:s3:::${aws_s3_bucket.nextflow_storage_bucket.id}/*",
+            "arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}/*",
             "arn:aws:s3:::${local.globus_bucket}/*"
           ]
         },
@@ -47,7 +47,7 @@ resource "aws_iam_role_policy" "server_s3_access" {
           Action   = ["s3:ListBucket"],
           Resource = [
             "arn:aws:s3:::${aws_s3_bucket.api_storage_bucket.id}",
-            "arn:aws:s3:::${aws_s3_bucket.nextflow_storage_bucket.id}",
+            "arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}",
             "arn:aws:s3:::${local.globus_bucket}"
           ]
         }
@@ -240,7 +240,7 @@ resource "aws_instance" "api" {
   export FACTER_GLOBUS_ENDPOINT_ID='${var.globus == null ? "" : var.globus.endpoint_id}'
   export FACTER_GOOGLE_OAUTH2_CLIENT_ID='${var.google_oauth2_client_id}'
   export FACTER_GOOGLE_OAUTH2_CLIENT_SECRET='${var.google_oauth2_client_secret}'
-  export FACTER_NEXTFLOW_BUCKET_NAME='${aws_s3_bucket.nextflow_storage_bucket.id}'
+  export FACTER_JOB_BUCKET_NAME='${aws_s3_bucket.job_storage_bucket.id}'
   export FACTER_PUBLIC_DATA_BUCKET_NAME='${var.public_data_bucket_name}'
   export FACTER_SENTRY_URL='${var.sentry_url}'
   export FACTER_STORAGE_LOCATION='${var.storage_location}'

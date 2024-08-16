@@ -45,7 +45,7 @@ class mevapi (
   Optional[String]        $globus_endpoint_id= '',
   Optional[String]        $google_oauth2_client_id='',
   Optional[String]        $google_oauth2_client_secret='',
-  String                  $nextflow_bucket_name,
+  String                  $job_bucket_name,
   Optional[String]        $project_root,
   Optional[String]        $public_data_bucket_name='',
   Optional[String]        $sentry_url = '',

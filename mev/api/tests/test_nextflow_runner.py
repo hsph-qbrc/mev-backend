@@ -367,7 +367,7 @@ class AWSBatchNextflowRunnerTester(BaseAPITestCase):
 
     @override_settings(AWS_BATCH_QUEUE='my-queue')
     @override_settings(AWS_REGION='us-east-2')
-    @override_settings(NEXTFLOW_BUCKET_NAME='my-nextflow-bucket')
+    @override_settings(JOB_BUCKET_NAME='my-job-bucket')
     def test_creates_config(self):
         nf_runner = AWSBatchNextflowRunner()
         p = nf_runner._prepare_config_template('/tmp')
@@ -388,7 +388,7 @@ class AWSBatchNextflowRunnerTester(BaseAPITestCase):
         aws.batch.cliPath = '/opt/aws-cli/bin/aws'
 
         //Additionally if we want to use S3 to hold intermediate files we can specify the work directory
-        workDir = 's3://my-nextflow-bucket/tmp'
+        workDir = 's3://my-job-bucket/tmp'
 
         docker.enabled = true
         """

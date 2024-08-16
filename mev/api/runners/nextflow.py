@@ -319,7 +319,7 @@ class AWSBatchNextflowRunner(NextflowRunner):
             fout.write(template_text.format(
                 aws_batch_queue=settings.AWS_BATCH_QUEUE,
                 aws_region=settings.AWS_REGION,
-                nextflow_bucket_name=settings.NEXTFLOW_BUCKET_NAME,
+                nextflow_bucket_name=settings.JOB_BUCKET_NAME,
                 uuid=os.path.basename(execution_dir)
             ))
         return runtime_config_path
@@ -331,4 +331,4 @@ class AWSBatchNextflowRunner(NextflowRunner):
         associated with the job execution
         '''
         return S3_PREFIX + \
-            os.path.join(settings.NEXTFLOW_BUCKET_NAME, str(executed_op_pk))
+            os.path.join(settings.JOB_BUCKET_NAME, str(executed_op_pk))

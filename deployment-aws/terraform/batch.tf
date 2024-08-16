@@ -39,8 +39,8 @@ resource "aws_iam_role_policy" "batch_instance_s3_access" {
         {
           Effect   = "Allow",
           Resource = [
-            "arn:aws:s3:::${aws_s3_bucket.nextflow_storage_bucket.id}",
-            "arn:aws:s3:::${aws_s3_bucket.nextflow_storage_bucket.id}/*"
+            "arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}",
+            "arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}/*"
           ],
           Action = "s3:*"
         },
@@ -57,7 +57,7 @@ resource "aws_iam_role_policy" "batch_instance_s3_access" {
         },
         {
           Effect   = "Deny",
-          Resource = "arn:aws:s3:::${aws_s3_bucket.nextflow_storage_bucket.id}",
+          Resource = "arn:aws:s3:::${aws_s3_bucket.job_storage_bucket.id}",
           Action   = [
             "s3:DeleteBucket*",
             "s3:CreateBucket",

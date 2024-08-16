@@ -36,7 +36,7 @@ node /api/ {
     globus_endpoint_id             => $facts['globus_endpoint_id'],
     google_oauth2_client_id        => $facts['google_oauth2_client_id'],
     google_oauth2_client_secret    => $facts['google_oauth2_client_secret'],
-    nextflow_bucket_name           => $facts['nextflow_bucket_name'],
+    job_bucket_name                => $facts['job_bucket_name'],
     public_data_bucket_name        => $facts['public_data_bucket_name'], 
     storage_location               => $facts['storage_location'],
     storage_bucket_name            => $facts['storage_bucket_name'],

@@ -268,9 +268,7 @@ if not WEBMEV_DEPLOYMENT_PLATFORM in AVAILABLE_WEBMEV_DEPLOYMENT_PLATFORMS:
 if get_env('ENABLE_REMOTE_JOB_RUNNERS') == 'yes':
     ENABLE_REMOTE_JOBS = True
 
-    # ensure we have the proper variables to work with Nextflow
-    # TODO: clean these up with respect to cloud environments- generalize.
-    NEXTFLOW_BUCKET_NAME = get_env('NEXTFLOW_BUCKET_NAME')
+    JOB_BUCKET_NAME = get_env('JOB_BUCKET_NAME')
     AWS_BATCH_QUEUE = get_env('AWS_BATCH_QUEUE')
     AWS_REGION = get_env('AWS_REGION')
 
