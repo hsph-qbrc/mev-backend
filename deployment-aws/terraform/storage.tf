@@ -3,7 +3,7 @@ resource "aws_s3_bucket" "api_storage_bucket" {
 }
 
 resource "aws_s3_bucket" "job_storage_bucket" {
-    bucket = "${local.stack}-job-storage"
+    bucket = "${local.stack}-webmev-job-storage"
 }
 
 resource "aws_s3_bucket" "logging" {
