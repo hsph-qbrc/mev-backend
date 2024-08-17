@@ -3,6 +3,7 @@ import os
 import json
 import uuid
 import datetime
+import shlex
 
 from django.conf import settings
 
@@ -11,6 +12,7 @@ import boto3
 from api.runners.base import OperationRunner, \
     TemplatedCommandMixin
 from api.models import ECSTaskDefinition
+from api.storage import S3_PREFIX
 from api.utilities.docker import check_image_exists, \
     get_image_name_and_tag
 from api.utilities.admin_utils import alert_admins
@@ -66,7 +68,9 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
     REQUIRED_RESOURCE_KEYS = [CPU_KEY, MEM_KEY]
 
     # Note the path of the AWS CLI in the Docker image:
-    AWS_CP_TEMPLATE = '/usr/local/bin/aws s3 cp {src} {dest}'
+    AWS_CLI_PATH = '/usr/local/bin/aws'
+    AWS_CP_TEMPLATE = AWS_CLI_PATH + ' s3 cp {src} {dest}'
+    AWS_DIR_CP_TEMPLATE = AWS_CLI_PATH + ' s3 cp --recursive {src} {dest}'
 
     def _get_ecs_client(self):
         return boto3.client('ecs')
@@ -193,6 +197,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                     "readOnly": False
                 }
             ],
+            "user": "root",
             "dependsOn": [
                 {
                     "containerName": ECSRunner.FILE_RETRIEVER,
@@ -314,10 +319,10 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         # file paths (e.g. aws s3 cp s3://some-bucket/file.tsv /data/<UUID>).
         # Note, however, that we need to know those UUIDs so we can provide a proper
         # command template for the override in the main analysis container.
-        file_mapping = self._create_file_mapping(op, arg_dict)
+        file_mapping = self._create_file_mapping(execution_uuid, op, arg_dict)
 
         # create the copy commands for the inputs:
-        input_copy_overrides = self._create_input_copy_overrides(arg_dict, file_mapping)
+        input_copy_overrides = self._create_input_copy_overrides(execution_uuid, arg_dict, file_mapping)
 
         # Construct the command that will be run in the container.
         # Recall that if the operation includes file-like objects,
@@ -326,8 +331,11 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         # This union operation replaces the s3 paths with local efs paths
         arg_dict_for_container = arg_dict | file_mapping
         entrypoint_file_path = os.path.join(op_dir, self.ENTRYPOINT_FILE)
-        entrypoint_cmd = self._get_entrypoint_command(
+        entrypoint_cmd_str = self._get_entrypoint_command(
             entrypoint_file_path, arg_dict_for_container)
+        # currently entrypoint_cmd is a string, but it needs to be 
+        # provided to the container in array form
+        entrypoint_cmd = shlex.split(entrypoint_cmd_str)
 
         output_copy_overrides = self._create_output_copy_overrides()
 
@@ -407,14 +415,17 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             f' operation with id: {executed_op.id}')
         raise JobSubmissionException()
 
-    def _create_output_copy_overrides(self):
-        return []
+    def _create_output_copy_overrides(self, execution_uuid):
+        src = f'{ECSRunner.EFS_DATA_DIR}/{execution_uuid}'
+        dest = f'{S3_PREFIX}{settings.JOB_BUCKET_NAME}/{execution_uuid}/'
+        cp_cmd = ECSRunner.AWS_DIR_CP_TEMPLATE.format(src=src, dest=dest)
+        return [cp_cmd]
         
-    def _create_file_mapping(self, op, arg_dict):
+    def _create_file_mapping(self, execution_uuid, op, arg_dict):
         '''
         When we submit jobs to ECS, the first step is to copy file resources
         onto the EFS volume. This function creates a mapping from the
-        bucket-based path to a unique identifier. In this way, we can
+        bucket-based path to a unique path. In this way, we can
         consistently refer to the same files in our command.
 
         As as example, consider the following `arg_dict`:
@@ -424,12 +435,13 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             'input_C': 's3://bucket/another_obj.tsv'
         }
         When we perform a copy in the first step of the ECS task,
-        we ultimately make a call like 'aws s3 cp s3://bucket/obj.tsv /data/<UUID1>'
-        and 'aws s3 cp s3://bucket/another_obj.tsv /data/<UUID2>'
-        However, we need to keep track that the file named UUID1 corresponds
+        we ultimately make a call like 'aws s3 cp s3://bucket/obj.tsv /data/<job UUID>/<UUID1>'
+        and 'aws s3 cp s3://bucket/another_obj.tsv /data/<job UUID>/<UUID2>' to copy
+        files onto the EFS volume
+        However, we need to keep track that the file placed at /data/<job UUID>/UUID1 corresponds
         to input_B, etc. This way, when the command is run, e.g.
-        <some script> -i <UUID1> -j <UUID2>, the inputs are correctly associated
-        with the command arguments.
+        <some script> -i /data/<job UUID>/<UUID1> -j /data/<job UUID>/<UUID2>, 
+        the inputs are correctly associated with the command arguments.
         '''
         mapping = {}
         op_inputs = op.inputs
@@ -440,13 +452,13 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             if spec['attribute_type'] in get_all_data_resource_typenames():
                 if spec['many']:
                     assert(type(v) is list)
-                    mapping[k] = [f'{ECSRunner.EFS_DATA_DIR}/{str(uuid.uuid4())}' for _ in v ]
+                    mapping[k] = [f'{ECSRunner.EFS_DATA_DIR}/{execution_uuid}/{str(uuid.uuid4())}' for _ in v ]
                 else:
                     assert(type(v) is str)
-                    mapping[k] = f'{ECSRunner.EFS_DATA_DIR}/{str(uuid.uuid4())}'
+                    mapping[k] = f'{ECSRunner.EFS_DATA_DIR}/{execution_uuid}/{str(uuid.uuid4())}'
         return mapping
 
-    def _create_input_copy_overrides(self, arg_dict, file_mapping):
+    def _create_input_copy_overrides(self, execution_uuid, arg_dict, file_mapping):
         '''
         This method constructs the override command which is run as 
         the first step of the ECS task.
@@ -474,7 +486,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                     src = s,
                     dest = dest
                 ))
-        return ['/bin/sh', '-c', ' && '.join(cp_commands)]
+        return [f'mkdir -p {ECSRunner.EFS_DATA_DIR}/{execution_uuid} && ' + ' && '.join(cp_commands)]
 
     def check_status(self, job_uuid):
         pass

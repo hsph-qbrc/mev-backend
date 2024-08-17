@@ -1,12 +1,16 @@
 import unittest.mock as mock
 import os
 import uuid
+import time
+import shlex
 from tempfile import TemporaryDirectory, TemporaryFile
 
 from django.test import override_settings
 
 from api.tests.base import BaseAPITestCase
 from api.runners.ecs import ECSRunner
+from api.models import ECSTaskDefinition, \
+    Operation as OperationDb
 from exceptions import MissingRequiredFileException
 
 from data_structures.operation import Operation
@@ -140,20 +144,23 @@ class ECSRunnerTester(BaseAPITestCase):
         }
 
         runner = ECSRunner()
-        result = runner._create_file_mapping(op, mock_inputs)
+        ex_op_uuid = '123-abc'
+        result = runner._create_file_mapping(ex_op_uuid, op, mock_inputs)
         # only includes file-like keys
         self.assertCountEqual(result.keys(), ['input_matrices', 'primary_matrix'])
         self.assertTrue(len(result['input_matrices']) == 2)
         # will fail if not UUIDs. Note we strip off the prefix dictating the directory
         # in the EFS volume
-        [uuid.UUID(x[len(ECSRunner.EFS_DATA_DIR) + 1:]) for x in result['input_matrices']]
-        uuid.UUID(result['primary_matrix'][len(ECSRunner.EFS_DATA_DIR) + 1:])
+        prefix = f'{ECSRunner.EFS_DATA_DIR}/{ex_op_uuid}'
+        [uuid.UUID(x[len(prefix) + 1:]) for x in result['input_matrices']]
+        uuid.UUID(result['primary_matrix'][len(prefix) + 1:])
 
     def test_input_copy_overrides_single(self):
         '''
         Tests that the proper commands are constructed
         for the initial step of the ECS task (copies)
         '''
+        ex_op_uuid = '123-abc'
         mock_inputs = {
             'primary_matrix': 's3://mybucket/obj_A.tsv',
             'num_neighbors': 10,
@@ -162,17 +169,15 @@ class ECSRunnerTester(BaseAPITestCase):
         }
 
         mapping = {
-            'primary_matrix': f'{ECSRunner.EFS_DATA_DIR}/uuid1'
+            'primary_matrix': f'{ECSRunner.EFS_DATA_DIR}/{ex_op_uuid}/uuid1'
         }
 
         runner = ECSRunner()
         data_dir = ECSRunner.EFS_DATA_DIR
-        cmd = runner._create_input_copy_overrides(mock_inputs, mapping)
-        self.assertTrue(cmd[0] == '/bin/sh')
-        self.assertTrue(cmd[1] == '-c')
+        cmd = runner._create_input_copy_overrides(ex_op_uuid, mock_inputs, mapping)
         self.assertEqual(
-            f'/usr/local/bin/aws s3 cp s3://mybucket/obj_A.tsv {data_dir}/uuid1', 
-            cmd[2]
+            f'mkdir -p {data_dir}/{ex_op_uuid} && {ECSRunner.AWS_CLI_PATH} s3 cp s3://mybucket/obj_A.tsv {data_dir}/{ex_op_uuid}/uuid1', 
+            cmd[0]
         )
 
     def test_input_copy_overrides_multiple(self):
@@ -180,6 +185,7 @@ class ECSRunnerTester(BaseAPITestCase):
         Tests that the proper commands are constructed
         for the initial step of the ECS task (copies)
         '''
+        ex_op_uuid = '123-abc'
         data_dir = ECSRunner.EFS_DATA_DIR
         mock_inputs = {
             'input_matrices': [
@@ -194,23 +200,21 @@ class ECSRunnerTester(BaseAPITestCase):
 
         mapping = {
             'input_matrices': [
-                f'{data_dir}/uuid1',
-                f'{data_dir}/uuid2'
+                f'{data_dir}/{ex_op_uuid}/uuid1',
+                f'{data_dir}/{ex_op_uuid}/uuid2'
             ], 
-            'primary_matrix': f'{data_dir}/uuid3'
+            'primary_matrix': f'{data_dir}/{ex_op_uuid}/uuid3'
         }
 
         runner = ECSRunner()
-        cmd = runner._create_input_copy_overrides(mock_inputs, mapping)
+        cmd = runner._create_input_copy_overrides(ex_op_uuid, mock_inputs, mapping)
         expected_cp_commands = [
-            f'/usr/local/bin/aws s3 cp s3://mybucket/obj_a.tsv {data_dir}/uuid1',
-            f'/usr/local/bin/aws s3 cp s3://mybucket/obj_b.tsv {data_dir}/uuid2',
-            f'/usr/local/bin/aws s3 cp s3://mybucket/obj_c.tsv {data_dir}/uuid3'
+            f'{ECSRunner.AWS_CLI_PATH} s3 cp s3://mybucket/obj_a.tsv {data_dir}/{ex_op_uuid}/uuid1',
+            f'{ECSRunner.AWS_CLI_PATH} s3 cp s3://mybucket/obj_b.tsv {data_dir}/{ex_op_uuid}/uuid2',
+            f'{ECSRunner.AWS_CLI_PATH} s3 cp s3://mybucket/obj_c.tsv {data_dir}/{ex_op_uuid}/uuid3'
         ]
-        cp_str = f'{expected_cp_commands[0]} && {expected_cp_commands[1]} && {expected_cp_commands[2]}'
-        self.assertTrue(cmd[0] == '/bin/sh')
-        self.assertTrue(cmd[1] == '-c')
-        self.assertEqual(cp_str, cmd[2])
+        cp_str = f'mkdir -p {data_dir}/{ex_op_uuid} && {expected_cp_commands[0]} && {expected_cp_commands[1]} && {expected_cp_commands[2]}'
+        self.assertEqual(cp_str, cmd[0])
 
     @override_settings(OPERATION_LIBRARY_DIR='/data/operations')
     def test_run(self):
@@ -235,7 +239,7 @@ class ECSRunnerTester(BaseAPITestCase):
         output_copy_overrides = ['output cp']
         mock_create_output_copy_overrides.return_value = output_copy_overrides
         mock_get_entrypoint_cmd = mock.MagicMock()
-        mock_cmd = 'some command'
+        mock_cmd = 'python3 /usr/local/bin/myscript -i /data/foo.tsv'
         mock_get_entrypoint_cmd.return_value = mock_cmd
         mock_get_task_def_arn = mock.MagicMock()
         mock_task_def_arn = 'arn::123'
@@ -263,10 +267,10 @@ class ECSRunnerTester(BaseAPITestCase):
             '/data/operations/<OP UUID>', 
             mock_validated_inputs,
             mock_staging_dir)
-        mock_create_file_mapping.assert_called_once_with(mock_op, 
+        mock_create_file_mapping.assert_called_once_with(mock_uuid, mock_op, 
             mock_converted_inputs)
         mock_create_input_copy_overrides.assert_called_once_with(
-            mock_converted_inputs, mock_file_mapping)
+            mock_uuid, mock_converted_inputs, mock_file_mapping)
         mock_get_entrypoint_cmd.assert_called_once_with(
             '/data/operations/<OP UUID>/entrypoint.txt',
             {'a': 'efs_path', 'b':2}) # <-- note that we have combined the dicts from above to create this
@@ -276,7 +280,7 @@ class ECSRunnerTester(BaseAPITestCase):
             mock_ex_op,
             mock_task_def_arn,
             input_copy_overrides,
-            mock_cmd,
+            shlex.split(mock_cmd),
             output_copy_overrides)
 
     @override_settings(AWS_ECS_CLUSTER='mycluster')
@@ -407,3 +411,31 @@ class ECSRunnerTester(BaseAPITestCase):
         runner._handle_ecs_submission_response(mock_ex_op, {})
         mock_ex_op.save.assert_not_called()
         mock_handle_submission_problem.assert_called_once_with(mock_ex_op)
+
+    def test_task_defn_query(self):
+        op1 = OperationDb.objects.create(
+            active=True,
+            name = 'DESeq2',
+            successful_ingestion = True,
+            workspace_operation = True
+        )
+        # add a couple definitions:
+        task_arn_1 = 'arn::task:1'
+        ECSTaskDefinition.objects.create(task_arn=task_arn_1, operation=op1)
+        time.sleep(1)
+        task_arn_2 = 'arn::task:2'
+        ECSTaskDefinition.objects.create(task_arn=task_arn_2, operation=op1)
+
+        runner = ECSRunner()
+        result = runner._get_task_definition_arn(op1.pk)
+        self.assertTrue(result == task_arn_2)
+
+    @override_settings(JOB_BUCKET_NAME='job-bucket')
+    @override_settings(AWS_ECS_SUBNET='subnet-01')
+    @override_settings(AWS_ECS_SECURITY_GROUP='sg-01')
+    def test_output_copy_override(self):
+        runner = ECSRunner()
+        exec_op_uuid = 'abd-123'
+        cp_str = f'{ECSRunner.AWS_CLI_PATH} s3 cp --recursive {ECSRunner.EFS_DATA_DIR}/{exec_op_uuid} s3://job-bucket/{exec_op_uuid}/'
+        cmd = runner._create_output_copy_overrides(exec_op_uuid)
+        self.assertEqual(cp_str, cmd[0])
