@@ -603,7 +603,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         `op` is an instance of data_structures.operation.Operation
         '''
         logger.info(f'In ECSRunner.finalize for job {executed_op.pk}')
-        job_info = self._get_ecs_task_info(executed_op.job_id)
+        task_info = self._get_ecs_task_info(executed_op.job_id)
+        job_info = task_info['tasks'][0]
         if job_info['stopCode'] == 'EssentialContainerExited':
             logger.info('Job completed with an essential container exit code')
             outputs_dict = self._locate_outputs(executed_op.pk)
