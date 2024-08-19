@@ -73,7 +73,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
     AWS_DIR_CP_TEMPLATE = AWS_CLI_PATH + ' s3 cp --recursive {src} {dest}'
 
     def _get_ecs_client(self):
-        return boto3.client('ecs')
+        return boto3.client('ecs', region_name=settings.AWS_REGION)
 
     def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
