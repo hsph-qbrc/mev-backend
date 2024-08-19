@@ -3,6 +3,8 @@ import unittest.mock as mock
 import uuid
 import tempfile
 
+from django.test import override_settings
+
 from exceptions import AttributeValueError, \
     DataStructureValidationException, \
     StringIdentifierException, \
@@ -2011,7 +2013,26 @@ class TestECSSingleVariableDataResourceConverter(BaseAPITestCase):
         c = ECSSingleDataResourceConverter()
         c.convert_input('some-pk', '', '')
         mock_storage.get_absolute_path.assert_called_with('some-name')
-        mock_get_resource_by_pk.assert_called_with('some-pk')   
+        mock_get_resource_by_pk.assert_called_with('some-pk')
+
+    @override_settings(JOB_BUCKET_NAME='job-bucket')
+    def test_output_conversion(self):
+        c = ECSSingleDataResourceConverter()
+        mock_private_convert = mock.MagicMock()
+        c._convert_output = mock_private_convert
+        mock_ex_op = mock.MagicMock()
+        my_uuid = 'some-uuid'
+        mock_ex_op.pk = my_uuid
+        mock_workspace = mock.MagicMock()
+        mock_output_def = mock.MagicMock()
+        output_val = f'/data/{my_uuid}/foo.tsv'
+        c.convert_output(mock_ex_op, mock_workspace, mock_output_def, output_val)
+        mock_private_convert.assert_called_once_with(
+            mock_ex_op,
+            mock_workspace, 
+            mock_output_def,
+            f's3://job-bucket/{my_uuid}/foo.tsv'
+        )
 
 class TestNextflowSingleResourceConverter(BaseAPITestCase):
 
@@ -2027,3 +2048,21 @@ class TestNextflowSingleResourceConverter(BaseAPITestCase):
         mock_storage.get_absolute_path.assert_called_with('some-name')
         mock_get_resource_by_pk.assert_called_with('some-pk')
     
+    @override_settings(JOB_BUCKET_NAME='job-bucket')
+    def test_output_conversion(self):
+        c = ECSSingleDataResourceConverter()
+        mock_private_convert = mock.MagicMock()
+        c._convert_output = mock_private_convert
+        mock_ex_op = mock.MagicMock()
+        my_uuid = 'some-uuid'
+        mock_ex_op.pk = my_uuid
+        mock_workspace = mock.MagicMock()
+        mock_output_def = mock.MagicMock()
+        output_val = f'/data/{my_uuid}/foo.tsv'
+        c.convert_output(mock_ex_op, mock_workspace, mock_output_def, output_val)
+        mock_private_convert.assert_called_once_with(
+            mock_ex_op,
+            mock_workspace, 
+            mock_output_def,
+            f's3://job-bucket/{my_uuid}/foo.tsv'
+        )

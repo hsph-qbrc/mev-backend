@@ -603,7 +603,11 @@ class ECSRunnerTester(BaseAPITestCase):
 
         mock_get_ecs_task_info = mock.MagicMock()
         mock_info = {
-            'stopCode': 'EssentialContainerExited'
+            'tasks': [
+                {
+                    'stopCode': 'EssentialContainerExited'
+                }
+            ]
         }
         mock_get_ecs_task_info.return_value = mock_info
         runner._get_ecs_task_info = mock_get_ecs_task_info
