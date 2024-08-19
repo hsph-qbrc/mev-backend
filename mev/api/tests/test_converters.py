@@ -39,7 +39,9 @@ from api.converters.data_resource import \
     LocalDockerSpaceDelimResourceConverter, \
     RemoteNextflowSingleDataResourceConverter, \
     RemoteResourceMixin, \
-    RemoteNextflowSingleVariableDataResourceConverter
+    RemoteNextflowSingleVariableDataResourceConverter, \
+    ECSSingleDataResourceConverter, \
+    ECSSingleVariableDataResourceConverter
     # RemoteNextflowMultipleDataResourceConverter, \
 
 from api.converters.element_set import ObservationSetCsvConverter, \
@@ -1996,3 +1998,32 @@ class TestNextflowSingleResourceConverter(BaseAPITestCase):
             'MTX',
             'TSV'
         )
+
+
+class TestECSSingleVariableDataResourceConverter(BaseAPITestCase):
+    @mock.patch('api.converters.data_resource.get_resource_by_pk')
+    @mock.patch('api.converters.data_resource.default_storage')
+    def test_input_conversion(self, mock_storage, mock_get_resource_by_pk):
+        mock_resource = mock.MagicMock()
+        mock_resource.datafile.name = 'some-name'
+        mock_get_resource_by_pk.return_value =  mock_resource
+        mock_storage.get_absolute_path.return_value = 's3://some-bucket/some-obj'
+        c = ECSSingleDataResourceConverter()
+        c.convert_input('some-pk', '', '')
+        mock_storage.get_absolute_path.assert_called_with('some-name')
+        mock_get_resource_by_pk.assert_called_with('some-pk')   
+
+class TestNextflowSingleResourceConverter(BaseAPITestCase):
+
+    @mock.patch('api.converters.data_resource.get_resource_by_pk')
+    @mock.patch('api.converters.data_resource.default_storage')
+    def test_input_conversion(self, mock_storage, mock_get_resource_by_pk):
+        mock_resource = mock.MagicMock()
+        mock_resource.datafile.name = 'some-name'
+        mock_get_resource_by_pk.return_value =  mock_resource
+        mock_storage.get_absolute_path.return_value = 's3://some-bucket/some-obj'
+        c = ECSSingleDataResourceConverter()
+        c.convert_input('some-pk', '', '')
+        mock_storage.get_absolute_path.assert_called_with('some-name')
+        mock_get_resource_by_pk.assert_called_with('some-pk')
+    

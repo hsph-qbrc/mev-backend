@@ -69,6 +69,13 @@ class OperationRunner(object):
         logger.info(f'Op data: {op.to_dict()}')
         logger.info(f'Validated inputs: {validated_inputs}')
 
+    def check_status(self, job_id):
+        '''
+        Method used by all runners to determine when job
+        is complete. Returns boolean
+        '''
+        raise NotImplementedError()
+
     def check_required_files(self, operation_dir):
         '''
         Checks that the files required for a particular run mode are, in fact,
@@ -256,7 +263,7 @@ class TemplatedCommandMixin(object):
                 f' file at {entrypoint_file_path}.')
             logger.error(err_msg)
             raise Exception(err_msg)
-            
+
         # read the template command
         entrypoint_cmd_template = Template(
             open(entrypoint_file_path, 'r').read())

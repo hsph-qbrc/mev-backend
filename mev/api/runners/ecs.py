@@ -488,5 +488,50 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 ))
         return [f'mkdir -p {ECSRunner.EFS_DATA_DIR}/{execution_uuid} && ' + ' && '.join(cp_commands)]
 
-    def check_status(self, job_uuid):
-        pass
+    def check_status(self, job_id):
+        '''
+        Method used by all runners to determine when job
+        is complete. Returns boolean
+        '''
+        is_running = self._check_ecs_task_status(job_id)
+        if is_running:
+            return False
+        else:
+            return True
+
+    def _check_ecs_task_status(self, job_id):
+        client = self._get_ecs_client()
+        response = client.describe_tasks(
+            cluster=settings.AWS_ECS_CLUSTER,
+            tasks=[
+                job_id
+            ]
+        )
+        return self._parse_task_status_response(response)
+
+    def _parse_task_status_response(self, response):
+        '''
+        Looks at the response from ECS and returns a boolean
+        indicating whether complete or not
+        '''
+        task = response['tasks'][0]
+        last_status = task['lastStatus']
+        task_arn = task['taskArn']
+        logger.info(f'Checking status on {task_arn=}')
+        if last_status == 'STOPPED':
+            logger.info(f'Task {task_arn=} had STOPPED status')
+            # check that all steps exited with exit code 0:
+            for container_status in response['tasks'][0]['containers']:
+                if container_status['exitCode'] != 0:
+                    logger.info(f'Encountered situation where ECS task'
+                        ' {task_arn} was stopped, but a container exited'
+                        ' with non-zero exit code.'
+                    )
+                    logger.info(json.dumps(task, indent=2, default=str))
+            return True
+        else:
+            logger.info(f'Task {task_arn=} had {last_status=}.')
+            return False
+
+    def finalize(self, executed_op, op):
+        logger.info(f'In ECSRunner.finalize for job {executed_op.pk}')
