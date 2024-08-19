@@ -178,7 +178,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
 
         # initial step where the files are copied to the EFS shared between
         # the task steps
-        container_defs.append(self._get_file_pull_container_definition)
+        container_defs.append(self._get_file_pull_container_definition())
 
         with open(os.path.join(op_dir, ECSRunner.RESOURCE_FILE)) as fh:
             resource_dict = self._get_resource_requirements(fh)
