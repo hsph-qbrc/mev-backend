@@ -67,10 +67,25 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
     MEM_KEY = 'mem_mb'
     REQUIRED_RESOURCE_KEYS = [CPU_KEY, MEM_KEY]
 
+    # dictates the cpu/mem of the push and pull tasks that 
+    # go before and after the actual analysis task
+    PUSH_AND_PULL_CPU = 256
+    PUSH_AND_PULL_MEM = 512
+
     # Note the path of the AWS CLI in the Docker image:
     AWS_CLI_PATH = '/usr/local/bin/aws'
     AWS_CP_TEMPLATE = AWS_CLI_PATH + ' s3 cp {src} {dest}'
     AWS_DIR_CP_TEMPLATE = AWS_CLI_PATH + ' s3 cp --recursive {src} {dest}'
+
+    # From:
+    # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definitions
+    # only these values are acceptable for 'cpu' and mem. We avoid complex logic here
+    # and assume relatively modest cpu/mem requirements. If jobs are bigger, they can be performed 
+    # with another runner, or we could increase the ceiling later.
+    ACCEPTABLE_CPU_VALUES = [256, 512, 1024, 2048, 4096, 8192, 16384]
+    # for mem values, they accept the following PLUS other values in discrete
+    # increments (e.g. between 8192 and 30720 in 1GB/1024 increments)
+    ACCEPTABLE_MEM_VALUES = [512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192, 16384]
 
     def _get_ecs_client(self):
         return boto3.client('ecs', region_name=settings.AWS_REGION)
@@ -114,6 +129,24 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                                 f' required key {k}.')
         return j
 
+    def _get_resource_limit(self, container_defs, key, acceptable_vals):
+        '''
+        When registering an ECS task, the 'cpu' and 'mem' field
+        provided in the definition must exceed the sum of the cpu/mem
+        values from the individual steps of the task.
+
+        Note that AWS enforces only particular combinations of cpu/mem
+        but we let AWS reject unacceptable values rather than 
+        re-creating logic here.
+        '''
+        resource_sum = 0
+        for c_def in container_defs:
+            resource_sum += int(c_def[key])
+        for x in acceptable_vals:
+            if x >= resource_sum:
+                return x
+        raise Exception('Resources specified in the task exceeded those for the ECSRunner.')
+
     def _register_new_task(self, repo_name, op_dir, image_url):
         '''
         Performs the actual registration of the task
@@ -121,6 +154,11 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         '''
         logger.info(f'Registering new task with ECS for {repo_name=}')
         container_definitions = self._get_container_defs(op_dir, image_url)
+
+        cpu = self._get_resource_limit(
+            container_definitions, 'cpu', ECSRunner.ACCEPTABLE_CPU_VALUES)
+        mem = self._get_resource_limit(
+            container_definitions, 'memory', ECSRunner.ACCEPTABLE_CPU_VALUES)
 
         client = self._get_ecs_client()
         try:
@@ -143,8 +181,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                     }
                 ],
                 requiresCompatibilities=['FARGATE'],
-                cpu='1024', # required for fargate. 
-                memory='3072',# required for fargate. 
+                cpu=str(cpu), # required for fargate. 
+                memory=str(mem),# required for fargate. 
                 runtimePlatform={
                     'cpuArchitecture': 'X86_64',
                     'operatingSystemFamily': 'LINUX'
@@ -161,6 +199,17 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             logger.error('Could not determine the task ARN.')
             raise Exception('Failed to get new task definition ARN.')
 
+    def _verify_task_requirements(self, resource_dict):
+        if resource_dict[ECSRunner.CPU_KEY] not in ECSRunner.ACCEPTABLE_CPU_VALUES:
+            raise Exception('The cpu requirements specified in the resource'
+                ' JSON file was not acceptable for an ECS task. Acceptable'
+                f' values are: {ECSRunner.ACCEPTABLE_CPU_VALUES}'
+            )
+        if resource_dict[ECSRunner.MEM_KEY] not in ECSRunner.ACCEPTABLE_MEM_VALUES:
+            raise Exception('The memory requirements specified in the resource'
+                ' JSON file was not acceptable for an ECS task. Acceptable'
+                f' values are {ECSRunner.ACCEPTABLE_MEM_VALUES}'
+            )
 
     def _get_container_defs(self, op_dir, image_url):
         '''
@@ -182,6 +231,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
 
         with open(os.path.join(op_dir, ECSRunner.RESOURCE_FILE)) as fh:
             resource_dict = self._get_resource_requirements(fh)
+
+        self._verify_task_requirements(resource_dict)
 
         # the main step
         analysis_def = {
@@ -227,8 +278,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             "image": ECSRunner.AWS_CLI_IMAGE,
             # 0.25 vCPU and 0.5 GB RAM
             # see https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definitions
-            "cpu": 256, 
-            "memory": 512,
+            "cpu": ECSRunner.PUSH_AND_PULL_CPU, 
+            "memory": ECSRunner.PUSH_AND_PULL_MEM,
             "essential": False,
             "entryPoint": [
                 "sh",
@@ -259,8 +310,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             "image": ECSRunner.AWS_CLI_IMAGE,
             # 0.25 vCPU and 0.5 GB RAM
             # see https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definitions
-            "cpu": 256, 
-            "memory": 512,
+            "cpu": ECSRunner.PUSH_AND_PULL_CPU, 
+            "memory": ECSRunner.PUSH_AND_PULL_MEM,
             "essential": True,
             "entryPoint": [
                 "sh",

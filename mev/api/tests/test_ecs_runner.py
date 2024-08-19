@@ -439,3 +439,62 @@ class ECSRunnerTester(BaseAPITestCase):
         cp_str = f'{ECSRunner.AWS_CLI_PATH} s3 cp --recursive {ECSRunner.EFS_DATA_DIR}/{exec_op_uuid} s3://job-bucket/{exec_op_uuid}/'
         cmd = runner._create_output_copy_overrides(exec_op_uuid)
         self.assertEqual(cp_str, cmd[0])
+
+    def test_task_resource_set(self):
+        '''
+        ECS requires that the resources for the individual
+        container definitions sum to less than the total
+        specified for the task. Test the function that checks this
+        '''
+        runner = ECSRunner()
+        mock_defs = [
+            {
+                'cpu': 256
+            },
+            {
+                'cpu': 512
+            },
+            {
+                'cpu': 256
+            }]
+        acceptable_values = [256, 512, 1024, 2048]
+        result = runner._get_resource_limit(mock_defs, 'cpu', acceptable_values)
+        self.assertEqual(result, 1024)
+
+        acceptable_values = [256, 512]
+        with self.assertRaisesRegex(Exception, 'exceeded'):
+            runner._get_resource_limit(mock_defs, 'cpu', acceptable_values)
+
+    def test_raises_error_if_invalid_resource_spec(self):
+        '''
+        ECS has some 'encoded' values for cpu/mem resources which
+        are acceptable. If a task specifies something that is not
+        compatible, check that we raise an exception
+        '''
+        runner = ECSRunner()
+        # patch these constants for testing ease:
+        ECSRunner.ACCEPTABLE_CPU_VALUES = [256, 512]
+        ECSRunner.ACCEPTABLE_MEM_VALUES = [256, 512, 1024]
+
+        # the cpu key is incorrect
+        resource_dict = {
+            runner.CPU_KEY: 288,
+            runner.MEM_KEY: 512
+        }
+        with self.assertRaisesRegex(Exception, 'not acceptable'):
+            runner._verify_task_requirements(resource_dict)
+
+        # seemingly plausible values, but the 2048 exceeds the max of 1024
+        resource_dict = {
+            runner.CPU_KEY: 512,
+            runner.MEM_KEY: 2048
+        }
+        with self.assertRaisesRegex(Exception, 'not acceptable'):
+            runner._verify_task_requirements(resource_dict)
+
+        # acceptable values- no problems.
+        resource_dict = {
+            runner.CPU_KEY: 512,
+            runner.MEM_KEY: 512
+        }
+        runner._verify_task_requirements(resource_dict)
