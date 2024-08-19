@@ -88,6 +88,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         task_arn = self._register_new_task(repo_name, operation_dir, image_url)
         
         # associate the task ARN with the Operation object in the database
+        logger.info(f'Associating {operation_db_obj} with {task_arn=}')
         ECSTaskDefinition.objects.create(task_arn=task_arn, operation=operation_db_obj)
 
     def _check_for_image(self, repo_name, git_hash):
@@ -118,6 +119,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         Performs the actual registration of the task
         with ECS
         '''
+        logger.info(f'Registering new task with ECS for {repo_name=}')
         container_definitions = self._get_container_defs(op_dir, image_url)
 
         client = self._get_ecs_client()
@@ -153,6 +155,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             raise ex
 
         try:
+            logger.info('No exceptions raised when registering. Get task ARN')
             return response['taskDefinition']['taskDefinitionArn']
         except KeyError:
             logger.error('Could not determine the task ARN.')
@@ -177,7 +180,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         # the task steps
         container_defs.append(self._get_file_pull_container_definition)
 
-        with os.path.join(op_dir, ECSRunner.RESOURCE_FILE) as fh:
+        with open(os.path.join(op_dir, ECSRunner.RESOURCE_FILE)) as fh:
             resource_dict = self._get_resource_requirements(fh)
 
         # the main step
