@@ -57,7 +57,7 @@ class ExecutedOperation(models.Model):
         default = uuid.uuid4, 
         editable = True,
         null = True,
-        max_length=64
+        max_length=128
     )
 
     # The user-assigned name for the ExecutedOperation
