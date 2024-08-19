@@ -11,11 +11,13 @@ import boto3
 
 from api.runners.base import OperationRunner, \
     TemplatedCommandMixin
-from api.models import ECSTaskDefinition
+from api.models import ECSTaskDefinition, \
+    ExecutedOperation
 from api.storage import S3_PREFIX
 from api.utilities.docker import check_image_exists, \
     get_image_name_and_tag
 from api.utilities.admin_utils import alert_admins
+from api.utilities.executed_op_utilities import get_execution_directory_path
 from exceptions import JobSubmissionException
 
 from data_structures.data_resource_attributes import get_all_data_resource_typenames
@@ -391,7 +393,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         # provided to the container in array form
         entrypoint_cmd = shlex.split(entrypoint_cmd_str)
 
-        output_copy_overrides = self._create_output_copy_overrides()
+        output_copy_overrides = self._create_output_copy_overrides(execution_uuid)
 
         # get the most recent task ARN associated with this operation
         task_def_arn = self._get_task_definition_arn(op.id)
@@ -554,15 +556,18 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             return True
 
     def _check_ecs_task_status(self, job_id):
+        response = self._get_ecs_task_info(job_id)
+        return self._parse_task_status_response(response)
+
+    def _get_ecs_task_info(self, job_id):
         client = self._get_ecs_client()
-        response = client.describe_tasks(
+        return client.describe_tasks(
             cluster=settings.AWS_ECS_CLUSTER,
             tasks=[
                 job_id
             ]
         )
-        return self._parse_task_status_response(response)
-
+        
     def _parse_task_status_response(self, response):
         '''
         Looks at the response from ECS and returns a boolean
@@ -582,10 +587,45 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                         ' with non-zero exit code.'
                     )
                     logger.info(json.dumps(task, indent=2, default=str))
-            return True
+                    alert_admins(f'Unexpected ECS task completion status for'
+                                 f' ARN {task_arn=}')
+            return False
         else:
             logger.info(f'Task {task_arn=} had {last_status=}.')
-            return False
+            return True
 
     def finalize(self, executed_op, op):
+        '''
+        Finishes up an ExecutedOperation. Does things like registering files 
+        with a user, cleanup, etc.
+
+        `executed_op` is an instance of api.models.ExecutedOperation
+        `op` is an instance of data_structures.operation.Operation
+        '''
         logger.info(f'In ECSRunner.finalize for job {executed_op.pk}')
+        job_info = self._get_ecs_task_info(executed_op.job_id)
+        if job_info['stopCode'] == 'EssentialContainerExited':
+            logger.info('Job completed with an essential container exit code')
+            outputs_dict = self._locate_outputs(executed_op.pk)
+            converted_outputs = self._convert_outputs(
+                executed_op, op, outputs_dict)
+            executed_op.outputs = converted_outputs
+            executed_op.status = ExecutedOperation.COMPLETION_SUCCESS
+        else:
+            logger.info('In finalize, unexpected exit status')
+            logger.info(json.dumps(job_info, indent=2, default=str))
+            executed_op.job_failed = True
+            executed_op.error_messages = ['Job failed']
+            alert_admins(f'ECS-based job ({str(executed_op.pk)}) failed.')
+            executed_op.status = ExecutedOperation.COMPLETION_ERROR
+
+        executed_op.execution_stop_datetime = datetime.datetime.now()
+        executed_op.save()
+
+    def _locate_outputs(self, exec_op_uuid):
+
+        outputs_path = f'{exec_op_uuid}/{self.OUTPUTS_JSON}'
+        dest_path = f'{get_execution_directory_path(exec_op_uuid)}/{self.OUTPUTS_JSON}'
+        s3 = boto3.client('s3')
+        s3.download_file(settings.JOB_BUCKET_NAME, outputs_path, dest_path)
+        return json.load(open(dest_path))

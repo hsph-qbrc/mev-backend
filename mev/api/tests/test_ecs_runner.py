@@ -274,7 +274,7 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_get_entrypoint_cmd.assert_called_once_with(
             '/data/operations/<OP UUID>/entrypoint.txt',
             {'a': 'efs_path', 'b':2}) # <-- note that we have combined the dicts from above to create this
-        mock_create_output_copy_overrides.assert_called_once_with()
+        mock_create_output_copy_overrides.assert_called_once_with(mock_uuid)
         mock_get_task_def_arn.assert_called_once_with('<OP UUID>')
         mock_submit_to_ecs.assert_called_once_with(
             mock_ex_op,
@@ -498,3 +498,123 @@ class ECSRunnerTester(BaseAPITestCase):
             runner.MEM_KEY: 512
         }
         runner._verify_task_requirements(resource_dict)
+
+    def test_parse_task_status_response_case1(self):
+        '''
+        Test that we issue an 'is finished' response
+        if the task has a STOPPED status and all exit codes
+        are zero
+        '''
+
+        runner = ECSRunner()
+
+        mock_success_response = {
+            'tasks': [
+                {
+                    'taskArn': 'arn::123',
+                    'lastStatus': 'STOPPED',
+                    'containers': [
+                        {
+                            'exitCode': 0
+                        },
+                        {
+                            'exitCode': 0
+                        },
+                        {
+                            'exitCode': 0
+                        }
+                    ]
+                }
+            ]
+        }
+
+        is_running = runner._parse_task_status_response(mock_success_response)
+        self.assertFalse(is_running)
+        
+    @mock.patch('api.runners.ecs.alert_admins')
+    def test_parse_task_status_response_case2(self, mock_alert_admins):
+        '''
+        Test that we issue an 'is finished' response
+        if the task has a STOPPED status and NOT all exit codes
+        are zero
+        '''
+
+        runner = ECSRunner()
+
+        mock_success_response = {
+            'tasks': [
+                {
+                    'taskArn': 'arn::123',
+                    'lastStatus': 'STOPPED',
+                    'containers': [
+                        {
+                            'exitCode': 0
+                        },
+                        {
+                            'exitCode': 1
+                        },
+                        {
+                            'exitCode': 0
+                        }
+                    ]
+                }
+            ]
+        }
+
+        is_running = runner._parse_task_status_response(mock_success_response)
+        self.assertFalse(is_running)
+        mock_alert_admins.assert_called()
+
+    def test_parse_task_status_response_case1(self):
+        '''
+        Test that we issue a 'not finished' response
+        if the task has a non-STOPPED value
+        '''
+
+        runner = ECSRunner()
+
+        mock_success_response = {
+            'tasks': [
+                {
+                    'taskArn': 'arn::123',
+                    'lastStatus': 'PROVISIONING',
+                    'containers': []
+                }
+            ]
+        }
+
+        is_running = runner._parse_task_status_response(mock_success_response)
+        self.assertTrue(is_running)
+
+    @mock.patch('api.runners.ecs.alert_admins')
+    def test_finalization(self, mock_alert_admins):
+        runner = ECSRunner()
+
+        # patch a couple methods on the class:
+        mock_locate_outputs = mock.MagicMock()
+        mock_initial_outputs_dict = {'outputA': 1}
+        mock_locate_outputs.return_value = mock_initial_outputs_dict
+        runner._locate_outputs = mock_locate_outputs
+
+        mock_convert_outputs = mock.MagicMock()
+        mock_final_outputs = {'outputA': 'something'}
+        mock_convert_outputs.return_value =  mock_final_outputs
+        runner._convert_outputs = mock_convert_outputs
+
+        mock_get_ecs_task_info = mock.MagicMock()
+        mock_info = {
+            'stopCode': 'EssentialContainerExited'
+        }
+        mock_get_ecs_task_info.return_value = mock_info
+        runner._get_ecs_task_info = mock_get_ecs_task_info
+
+        mock_ex_op = mock.MagicMock()
+        mock_ex_op.pk = 'my-pk'
+        mock_ex_op.job_id = 'job-id'
+        mock_op = mock.MagicMock()
+        runner.finalize(mock_ex_op, mock_op)
+        mock_get_ecs_task_info.assert_called_once_with('job-id')
+        mock_alert_admins.assert_not_called()
+        mock_locate_outputs.assert_called_once_with('my-pk')
+        mock_convert_outputs.assert_called_once_with(mock_ex_op, mock_op, mock_initial_outputs_dict)
+        self.assertDictEqual(mock_ex_op.outputs, mock_final_outputs)

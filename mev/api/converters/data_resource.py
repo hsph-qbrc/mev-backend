@@ -754,8 +754,8 @@ class ECSSingleDataResourceConverter(
         This converts a single output resource (a path) to a Resource instance
         and returns the pk/UUID for that newly created database resource.
         '''
-        # TODO: implement
-        raise NotImplementedError()
+        return self._convert_output(
+            executed_op, workspace, output_definition, output_val)
 
 
 class ECSSingleVariableDataResourceConverter(
@@ -779,5 +779,5 @@ class ECSSingleVariableDataResourceConverter(
         This converts a single output resource (a path) to a Resource instance
         and returns the pk/UUID for that newly created database resource.
         '''
-        # TODO: implement
-        raise NotImplementedError()
+        return self._convert_output(
+            executed_op, workspace, output_definition, output_val)
