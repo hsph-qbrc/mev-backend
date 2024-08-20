@@ -8,6 +8,7 @@ import shlex
 from django.conf import settings
 
 import boto3
+import numpy as np
 
 from api.runners.base import OperationRunner, \
     TemplatedCommandMixin
@@ -87,7 +88,10 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
     ACCEPTABLE_CPU_VALUES = [256, 512, 1024, 2048, 4096, 8192, 16384]
     # for mem values, they accept the following PLUS other values in discrete
     # increments (e.g. between 8192 and 30720 in 1GB/1024 increments)
-    ACCEPTABLE_MEM_VALUES = [512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192, 16384]
+    ACCEPTABLE_MEM_VALUES = [512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, \
+                             8192, 16384] \
+                           + list(16384+1024*np.arange(1,15))
+
 
     def _get_ecs_client(self):
         return boto3.client('ecs', region_name=settings.AWS_REGION)
@@ -160,7 +164,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         cpu = self._get_resource_limit(
             container_definitions, 'cpu', ECSRunner.ACCEPTABLE_CPU_VALUES)
         mem = self._get_resource_limit(
-            container_definitions, 'memory', ECSRunner.ACCEPTABLE_CPU_VALUES)
+            container_definitions, 'memory', ECSRunner.ACCEPTABLE_MEM_VALUES)
 
         client = self._get_ecs_client()
         try:
@@ -254,6 +258,15 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 }
             ],
             "user": "root",
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": f"{settings.AWS_LOG_GROUP}-ecs-logs",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": settings.AWS_REGION,
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
             "dependsOn": [
                 {
                     "containerName": ECSRunner.FILE_RETRIEVER,
@@ -302,7 +315,16 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                     "containerPath": ECSRunner.EFS_DATA_DIR,
                     "readOnly": False
                 }
-            ]
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": f"{settings.AWS_LOG_GROUP}-ecs-logs",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": settings.AWS_REGION,
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
         }
 
     def _get_file_push_container_definition(self):
@@ -335,6 +357,15 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                     "readOnly": True
                 }
             ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": f"{settings.AWS_LOG_GROUP}-ecs-logs",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": settings.AWS_REGION,
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
             "dependsOn": [
                 {
                     "containerName": ECSRunner.ANALYSIS_CONTAINER_NAME,
@@ -581,14 +612,22 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             logger.info(f'Task {task_arn=} had STOPPED status')
             # check that all steps exited with exit code 0:
             for container_status in response['tasks'][0]['containers']:
-                if container_status['exitCode'] != 0:
+                try:
+                    exit_code = container_status['exitCode']
+                except KeyError as ex:
+                    logger.info('One of the containers did not have an exit'
+                    ' code, likely due to a premature exit of a prior step.')
+                    return False
+                if exit_code != 0:
                     logger.info(f'Encountered situation where ECS task'
                         ' {task_arn} was stopped, but a container exited'
                         ' with non-zero exit code.'
                     )
                     logger.info(json.dumps(task, indent=2, default=str))
-                    alert_admins(f'Unexpected ECS task completion status for'
-                                 f' ARN {task_arn=}')
+
+                    # if we don't return now, then containers that have not been
+                    # run will raise a KEy
+                    return False
             return False
         else:
             logger.info(f'Task {task_arn=} had {last_status=}.')
@@ -612,6 +651,12 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 executed_op, op, outputs_dict)
             executed_op.outputs = converted_outputs
             executed_op.status = ExecutedOperation.COMPLETION_SUCCESS
+        elif job_info['stopCode'] == 'TaskFailedToStart':
+            logger.info('In finalize, received TaskFailedToStart code')
+            logger.info(json.dumps(job_info, indent=2, default=str))
+            executed_op.job_failed = True
+            executed_op.error_messages = ['Job failed']
+            executed_op.status = ExecutedOperation.COMPLETION_ERROR
         else:
             logger.info('In finalize, unexpected exit status')
             logger.info(json.dumps(job_info, indent=2, default=str))
