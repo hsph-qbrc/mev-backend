@@ -84,6 +84,72 @@ resource "aws_iam_role_policy" "server_batch_access" {
   )
 }
 
+# allows the api server to register ECS task definitions
+resource "aws_iam_role_policy" "server_ecs_access" {
+  name   = "AllowAccessToECS"
+  role   = aws_iam_role.api_server_role.id
+  policy = jsonencode(
+    {
+      Version   = "2012-10-17",
+      Statement = [
+        {
+          Effect   = "Allow",
+          Action   = [
+            "ecs:RegisterTaskDefinition",
+            "ecs:RunTask",
+            "ecs:DescribeTasks"
+          ],
+          Resource = ["*"]
+        }
+      ]
+    }
+  )
+}
+
+# when the api server registers a task, it needs to be able
+# to pass specific roles
+resource "aws_iam_role_policy" "server_ecs_passrole" {
+  name   = "AllowRolePassing"
+  role   = aws_iam_role.api_server_role.id
+  policy = jsonencode(
+    {
+      Version   = "2012-10-17",
+      Statement = [
+        {
+          Effect   = "Allow",
+          Action   = [
+            "iam:PassRole"
+          ],
+          Resource = [
+            aws_iam_role.ecs_execution_role.arn,
+            aws_iam_role.ecs_task_role.arn
+          ]
+        }
+      ]
+    }
+  )
+}
+
+# allows the api server to view the ECS logs
+resource "aws_iam_role_policy" "ecs_logs" {
+  name   = "AllowAccessToECSLogs"
+  role   = aws_iam_role.api_server_role.id
+  policy = jsonencode(
+    {
+      Version   = "2012-10-17",
+      Statement = [
+        {
+          Effect   = "Allow",
+          Action   = [
+            "logs:GetLogEvents"
+          ],
+          Resource = [aws_cloudwatch_log_group.ecs.arn]
+        }
+      ]
+    }
+  )
+}
+
 # For adding SSM to the instance:
 resource "aws_iam_role_policy_attachment" "api_server_ssm" {
   role       = aws_iam_role.api_server_role.id
@@ -190,6 +256,9 @@ resource "aws_instance" "api" {
 
   # install and configure librarian-puppet
   export PUPPET_ROOT="$PROJECT_ROOT/deployment-aws/puppet"
+  /opt/puppetlabs/puppet/bin/gem install --no-document librarian-puppet -v '~> 5'
+  /opt/puppetlabs/puppet/bin/gem uninstall minitar -I
+  /opt/puppetlabs/puppet/bin/gem install --no-document minitar -v '0.12'
   /opt/puppetlabs/puppet/bin/gem install librarian-puppet -v 5.0.0 --no-document
   # need to set $HOME: https://github.com/rodjek/librarian-puppet/issues/258
   export HOME=/root
@@ -208,7 +277,8 @@ resource "aws_instance" "api" {
   export FACTER_AWS_BATCH_QUEUE='${aws_batch_job_queue.nextflow.name}'
   export FACTER_AWS_ECS_CLUSTER='${aws_ecs_cluster.ecs.name}'
   export FACTER_AWS_ECS_EXECUTION_ROLE='${aws_iam_role.ecs_execution_role.arn}'
-  export FACTER_AWS_ECS_SECURITY_GROUP='${aws_security_group.ecs_instance_security_group.name}'
+  export FACTER_AWS_ECS_LOG_GROUP='${aws_cloudwatch_log_group.ecs.name}'
+  export FACTER_AWS_ECS_SECURITY_GROUP='${aws_security_group.ecs_instance_security_group.id}'
   export FACTER_AWS_ECS_SUBNET='${aws_subnet.public.id}'
   export FACTER_AWS_ECS_TASK_ROLE='${aws_iam_role.ecs_task_role.arn}'
   export FACTER_AWS_EFS_ACCESS_POINT='${aws_efs_access_point.efs_ap.id}'

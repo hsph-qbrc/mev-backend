@@ -70,6 +70,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
     MEM_KEY = 'mem_mb'
     REQUIRED_RESOURCE_KEYS = [CPU_KEY, MEM_KEY]
 
+    AWS_LOG_STREAM_PREFIX = 'ecs'
+
     # dictates the cpu/mem of the push and pull tasks that 
     # go before and after the actual analysis task
     PUSH_AND_PULL_CPU = 256
@@ -261,8 +263,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
-                    "awslogs-group": f"{settings.AWS_LOG_GROUP}-ecs-logs",
-                    "awslogs-create-group": "true",
+                    "awslogs-group": settings.AWS_ECS_LOG_GROUP,
+                    "awslogs-create-group": "false",
                     "awslogs-region": settings.AWS_REGION,
                     "awslogs-stream-prefix": "ecs"
                 }
@@ -319,8 +321,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
-                    "awslogs-group": f"{settings.AWS_LOG_GROUP}-ecs-logs",
-                    "awslogs-create-group": "true",
+                    "awslogs-group": settings.AWS_ECS_LOG_GROUP,
+                    "awslogs-create-group": "false",
                     "awslogs-region": settings.AWS_REGION,
                     "awslogs-stream-prefix": "ecs"
                 }
@@ -360,8 +362,8 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
-                    "awslogs-group": f"{settings.AWS_LOG_GROUP}-ecs-logs",
-                    "awslogs-create-group": "true",
+                    "awslogs-group": settings.AWS_ECS_LOG_GROUP,
+                    "awslogs-create-group": "false",
                     "awslogs-region": settings.AWS_REGION,
                     "awslogs-stream-prefix": "ecs"
                 }
@@ -655,6 +657,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             logger.info('In finalize, received TaskFailedToStart code')
             logger.info(json.dumps(job_info, indent=2, default=str))
             executed_op.job_failed = True
+            self._check_logs(job_info)
             executed_op.error_messages = ['Job failed']
             executed_op.status = ExecutedOperation.COMPLETION_ERROR
         else:
@@ -667,6 +670,28 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
 
         executed_op.execution_stop_datetime = datetime.datetime.now()
         executed_op.save()
+
+    def _check_logs(self, job_info):
+        containers = job_info['containers']
+        for container in containers:
+            try:
+                if container['exitCode'] == 1:
+                    container_name = container['name']
+                    task_id = container['taskArn'].split('/')[-1]
+                    logger.info(f"Task step {container_name} had exit code 1. Get logs")
+                    self._query_log_stream(container_name, task_id)
+                elif container['exitCode'] == 0:
+                    logger.info(f"Task step {container['name']} had exit code 0")
+                else:
+                    logger.info(f"Task step {container['name']} had exit code {container['exitCode']}")
+            except KeyError as ex:
+                pass
+
+    def _query_log_stream(self, step_name, task_id):
+        stream_name = f'{ECSRunner.AWS_LOG_STREAM_PREFIX}/{step_name}/{task_id}'
+        client = boto3.client('logs', region_name=settings.AWS_REGION)
+        response = client.get_log_events(
+            logStreamName=stream_name, logGroupName=settings.AWS_ECS_LOG_GROUP)
 
     def _locate_outputs(self, exec_op_uuid):
 

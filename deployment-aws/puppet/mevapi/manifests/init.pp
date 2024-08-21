@@ -10,6 +10,7 @@ class mevapi (
   String                  $aws_batch_queue,
   String                  $aws_ecs_cluster,
   String                  $aws_ecs_execution_role,
+  String                  $aws_ecs_log_group,
   String                  $aws_ecs_security_group,
   String                  $aws_ecs_subnet,
   String                  $aws_ecs_task_role,

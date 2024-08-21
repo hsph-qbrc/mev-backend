@@ -4,6 +4,7 @@ node /api/ {
     aws_batch_queue                => $facts['aws_batch_queue'],
     aws_ecs_cluster                => $facts['aws_ecs_cluster'],
     aws_ecs_execution_role         => $facts['aws_ecs_execution_role'],
+    aws_ecs_log_group              => $facts['aws_ecs_log_group'],
     aws_ecs_security_group         => $facts['aws_ecs_security_group'],
     aws_ecs_subnet                 => $facts['aws_ecs_subnet'],
     aws_ecs_task_role              => $facts['aws_ecs_task_role'],
