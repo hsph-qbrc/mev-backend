@@ -143,7 +143,7 @@ resource "aws_iam_role_policy" "ecs_logs" {
           Action   = [
             "logs:GetLogEvents"
           ],
-          Resource = [aws_cloudwatch_log_group.ecs.arn]
+          Resource = ["${aws_cloudwatch_log_group.ecs.arn}:*"]
         }
       ]
     }
