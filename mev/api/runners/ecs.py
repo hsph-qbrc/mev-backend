@@ -264,7 +264,6 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 "logDriver": "awslogs",
                 "options": {
                     "awslogs-group": settings.AWS_ECS_LOG_GROUP,
-                    "awslogs-create-group": "false",
                     "awslogs-region": settings.AWS_REGION,
                     "awslogs-stream-prefix": "ecs"
                 }
@@ -322,7 +321,6 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 "logDriver": "awslogs",
                 "options": {
                     "awslogs-group": settings.AWS_ECS_LOG_GROUP,
-                    "awslogs-create-group": "false",
                     "awslogs-region": settings.AWS_REGION,
                     "awslogs-stream-prefix": "ecs"
                 }
@@ -363,7 +361,6 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 "logDriver": "awslogs",
                 "options": {
                     "awslogs-group": settings.AWS_ECS_LOG_GROUP,
-                    "awslogs-create-group": "false",
                     "awslogs-region": settings.AWS_REGION,
                     "awslogs-stream-prefix": "ecs"
                 }
@@ -657,8 +654,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             logger.info('In finalize, received TaskFailedToStart code')
             logger.info(json.dumps(job_info, indent=2, default=str))
             executed_op.job_failed = True
-            self._check_logs(job_info)
-            executed_op.error_messages = ['Job failed']
+            executed_op.error_messages = self._check_logs(job_info)
             executed_op.status = ExecutedOperation.COMPLETION_ERROR
         else:
             logger.info('In finalize, unexpected exit status')
@@ -679,7 +675,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                     container_name = container['name']
                     task_id = container['taskArn'].split('/')[-1]
                     logger.info(f"Task step {container_name} had exit code 1. Get logs")
-                    self._query_log_stream(container_name, task_id)
+                    return self._query_log_stream(container_name, task_id)
                 elif container['exitCode'] == 0:
                     logger.info(f"Task step {container['name']} had exit code 0")
                 else:
@@ -691,7 +687,10 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         stream_name = f'{ECSRunner.AWS_LOG_STREAM_PREFIX}/{step_name}/{task_id}'
         client = boto3.client('logs', region_name=settings.AWS_REGION)
         response = client.get_log_events(
-            logStreamName=stream_name, logGroupName=settings.AWS_ECS_LOG_GROUP)
+            logStreamName=stream_name, 
+            logGroupName=settings.AWS_ECS_LOG_GROUP)
+        log_events = sorted(response['events'], key=lambda x: x['timestamp'])
+        return [x['message'] for x in log_events]
 
     def _locate_outputs(self, exec_op_uuid):
 
