@@ -18,6 +18,13 @@ resource "aws_security_group" "efs_security_group" {
     protocol         = "tcp"
     security_groups  = [aws_security_group.ecs_instance_security_group.id]
   }
+  ingress {
+    description      = "Allow limited ingress from api server"
+    from_port        = 2049
+    to_port          = 2049
+    protocol         = "tcp"
+    security_groups  = [aws_security_group.api_server.id]
+  }
 }
 
 
