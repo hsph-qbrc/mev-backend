@@ -1,14 +1,19 @@
 # This file contains information about the different table-
 # based file types and methods for validating them
 import logging
+from multiprocessing.sharedctypes import Value
 import re
 import uuid
 from functools import reduce
 from io import BytesIO
 from collections import OrderedDict
+import json
+import os
+import time
 
 import pandas as pd
 import numpy as np
+import boto3
 
 from django.conf import settings
 from django.core.paginator import Paginator, Page
@@ -21,7 +26,8 @@ from constants import CSV_FORMAT, \
     OBSERVATION_SET_KEY, \
     PARENT_OP_KEY, \
     POSITIVE_INF_MARKER, \
-    NEGATIVE_INF_MARKER
+    NEGATIVE_INF_MARKER, \
+    FIRST_COLUMN_ID
 
 from exceptions import ParseException, \
     FileParseException, \
@@ -120,6 +126,9 @@ EXCEL_DATETIME_ERROR = ('A datetime ({x}) was found when parsing your file.'
 # If requesting a preview of the table, how many lines do we return?
 PREVIEW_NUM_LINES = 5
 
+S3_RECORD_DELIMITER = ';'
+
+
 def col_str_formatter(x):
     '''
     x is a tuple with the column number
@@ -197,12 +206,17 @@ class TableResource(DataResource):
     # the "standardized" format we will save all table-based files as:
     STANDARD_FORMAT = TSV_FORMAT
 
+    # by default, the columns of a general TableResource do NOT
+    # have an expected type (e.g. all entries should be integers, etc.)
+    TARGET_TYPE = None
+
     # Create a list of query params that are "reserved" and we ignore when
     # attempting to filter on the actual table content (e.g. the column/rows)
     IGNORED_QUERY_PARAMS = [settings.PAGE_SIZE_PARAM, settings.PAGE_PARAM, settings.SORT_PARAM]
 
     def __init__(self):
         self.table = None
+        self.requires_local_processing = False
 
     @staticmethod
     def get_paginator():
@@ -276,6 +290,7 @@ class TableResource(DataResource):
         The `requested_file_format` kwarg is used when we are attempting
         a read on an unvalidated file.
         '''
+        logger.info(f'Read resource ({resource_instance.pk})')
         if requested_file_format is None:
             file_format = resource_instance.file_format
         else:
@@ -442,6 +457,124 @@ class TableResource(DataResource):
             # Need to convert our strings (e.g. "[asc]") to bools for the pandas sort_values method.
             order_bool = [True if x==settings.ASCENDING else False for x in sort_order_list]                
             self.table.sort_values(by=column_list, ascending=order_bool, inplace=True)
+
+    def _construct_inclusion_clause(self, key, val):
+        # for SQL, need to add quotes in the delimited string.
+        # Note that this does NOT include the leading the trailing
+        # single quotes, which we add later
+        vs = [_.strip() for _ in val.split(',') if len(_) > 0]
+        csv = "','".join(vs)
+        return (len(vs), f"s.{key} IN ('{csv}')")
+
+    def _construct_s3_query_sql(self, query_params, preview=False):
+
+        base_command = 'SELECT {col_select} FROM s3object s{where_clause} {limit_clause}'
+        where_clause_list = []
+        where_clause = ''
+        limit_clause = ''
+        col_select = '*' # unless specified otherwise, get all columns
+
+        for k,v in query_params.items():
+            # v is either a value (in the case of strict equality)
+            # or a delimited string which will dictate the comparison.
+            # For example, to filter on the 'pval' column for values less than or equal to 0.01, 
+            # v would be "[lte]:0.01". The "[lte]" string is set in our general settings file.
+            split_v = v.split(settings.QUERY_PARAM_DELIMITER)
+
+            if k == settings.ROWNAME_FILTER:
+                if len(split_v) != 2:
+                    raise ParseException('The query for filtering on the rows'
+                        ' was not properly formatted. It should be [<op>]:<value>')
+
+                op_name = split_v[0]
+                if not op_name in [settings.IS_IN, 
+                                   settings.EQUAL_TO,
+                                   settings.CASE_INSENSITIVE_EQUALS,
+                                   settings.STARTSWITH]:
+                    raise ParseException('When filtering on rows, we only'
+                        f' accept strict equality ({settings.EQUAL_TO}) or'
+                        f' case-insensitive'
+                        f' ({settings.CASE_INSENSITIVE_EQUALS}) to'
+                        f' get a single row or {settings.IS_IN} to get'
+                        'multiple rows.'
+                    )
+                val = split_v[1]
+                if op_name == settings.EQUAL_TO:
+                    where_clause_list.append(f"s.{FIRST_COLUMN_ID} = '{val}'")
+                    limit_clause = 'LIMIT 1'
+                elif op_name == settings.CASE_INSENSITIVE_EQUALS:
+                    where_clause_list.append(f"LOWER(s.{FIRST_COLUMN_ID}) = '{val.lower()}'")
+                elif op_name == settings.IS_IN:
+                    _n, clause = self._construct_inclusion_clause(FIRST_COLUMN_ID, val)
+                    where_clause_list.append(clause)
+                    limit_clause = f'LIMIT {_n}'
+                elif op_name == settings.STARTSWITH:
+                    where_clause_list.append(f"s.{FIRST_COLUMN_ID} LIKE '{val}%'")
+
+            elif k == settings.COLNAME_FILTER:
+                if len(split_v) != 2:
+                    raise ParseException('The query for filtering on the columns'
+                        ' was not properly formatted. It should be [<op>]:<value>')
+                # the name of the operation. For column name filtering, we 
+                # only allow strict equals (single column) or 
+                # 'is in' (for getting >=1 columns)
+                op_name = split_v[0] 
+                if not op_name in [settings.IS_IN, settings.EQUAL_TO]:
+                    raise ParseException('When filtering on columns, we only'
+                        f' accept strict equality ({settings.EQUAL_TO}) to'
+                        f' get a single column or {settings.IS_IN} to get'
+                        'multiple columns.'
+                    )
+                val = split_v[1]
+                col_select = 's."__id__",'
+                if op_name == settings.EQUAL_TO:
+                    col_select += f's."{val}"'
+                elif op_name == settings.IS_IN:
+                    # for SQL, need to add quotes in the delimited string.
+                    # Note that this does NOT include the leading the trailing
+                    # single quotes, which we add later
+                    csv = ''.join([f's."{_.strip()}",' for _ in val.split(',')]).rstrip(',')
+                    col_select += csv
+            elif (not k in self.IGNORED_QUERY_PARAMS):
+                if split_v[0] in settings.NUMERIC_OPERATOR_SYMBOLS:
+                    val = self.do_type_cast(split_v[1], 'float')
+                    op = settings.NUMERIC_OPERATOR_SYMBOLS[split_v[0]]
+                    # since we are performing a cast below, we need to careful
+                    # to ignore records that include 'out of bounds' values
+                    # that preclude the casting. Typically, this includes
+                    # Inf/-Inf and NaN (as blanks or NA)
+                    prefix = f"LOWER(s.{k}) != 'inf' and LOWER(s.{k}) != '-inf' and s.{k} != '' and s.{k} != 'NA'"
+                    where_clause_list.append(f"{prefix} and CAST(s.{k} AS FLOAT) {op} {val}")
+                elif split_v[0] == settings.EQUAL_TO:
+                    where_clause_list.append(f"s.{k} = {split_v[1]}")
+                elif split_v[0] == settings.CASE_INSENSITIVE_EQUALS:
+                    where_clause_list.append(f"lower(s.{k}) = '{split_v[1].lower()}'")
+                elif split_v[0] == settings.STARTSWITH:
+                    where_clause_list.append(f"s.{k} LIKE '{split_v[1].lower()}%'")
+                elif split_v[0] == settings.IS_IN:
+                    _n, clause = self._construct_inclusion_clause(k, split_v[1])
+                    where_clause_list.append(clause)
+
+            elif k in self.IGNORED_QUERY_PARAMS:
+                # need to have this here or else the 'ignored' query params
+                # are treated as unknown columns to sort on in the `else` statement
+                # below
+                pass
+            else:
+                raise ParseException(f'The column "{k}" is'
+                    ' not available for filtering.')
+
+        if len(where_clause_list) > 0:
+            where_clause = ' WHERE '
+            where_clause += ' and '.join(where_clause_list)
+
+        if preview:
+            limit_clause = f'LIMIT {PREVIEW_NUM_LINES}'
+
+        sql = base_command.format(col_select=col_select, 
+                                  where_clause=where_clause,
+                                  limit_clause=limit_clause)
+        return sql.rstrip()
 
     def filter_against_query_params(self, query_params):
         '''
@@ -676,35 +809,141 @@ class TableResource(DataResource):
         The dataframe allows the caller to subset as needed to 'paginate'
         the rows of the table
         '''
+        self.additional_exported_cols = []
+
+        if (settings.WEBMEV_DEPLOYMENT_PLATFORM == settings.AMAZON) and \
+            (not self.requires_local_processing):
+            try:
+                return self._query_contents_on_s3(resource_instance,
+                                                  query_params,
+                                                  preview)
+            except:
+                # if anything goes wrong in the S3-based query,
+                # fall back to local.
+                err_msg = ('Encountered an error when querying S3 select'
+                             f' on resource {resource_instance.pk}')
+                logger.error(err_msg)
+                alert_admins(err_msg)
+                return self._get_local_contents(resource_instance,
+                                                query_params,
+                                                preview) 
+        else:
+            return self._get_local_contents(resource_instance,
+                                            query_params,
+                                            preview)
+        
+    def _query_contents_on_s3(self, resource_instance, query_params={}, preview=False):
+        logger.info(f'Query contents of resource ({resource_instance.pk}) via S3 select.')
+        sql = self._construct_s3_query_sql(query_params, preview=preview)
+        self._issue_s3_select_query(resource_instance, sql)
+        self._resource_specific_modifications()
+        self.perform_sorting(query_params)
+        return self.table
+
+    def _make_s3_select(self, key, sql):
+        '''
+        Performs the actual task of calling out to s3 select.
+
+        Returns a string
+        '''
+
+        s3 = boto3.client('s3')
+        response = s3.select_object_content(
+            Bucket=settings.MEDIA_ROOT,
+            Key=key,
+            ExpressionType='SQL',
+            Expression=sql,
+            InputSerialization={'CSV': {"FileHeaderInfo": "Use", "FieldDelimiter": "\t"}},
+            OutputSerialization={'JSON': {'RecordDelimiter': S3_RECORD_DELIMITER}},
+        )
+        s = ''
+        for event in response['Payload']:
+            if 'Records' in event:
+                records = event['Records']['Payload'].decode('utf-8')
+                s += records
+        return s
+
+    def _handle_s3_select_problem(self, s3_select_ex):
         try:
-            logger.info(f'Read resource ({resource_instance.pk})')
-            self.read_resource(resource_instance, preview=preview)
-            self.additional_exported_cols = []
+            err_code = s3_select_ex.response['Error']['Code']
+            if err_code == 'MissingHeaders':
+                # MissingHeaders is returned when you attempt to select
+                # on a column that does not exist
+                return 'One or more of the columns was not properly specified.'
+            else:
+                logger.info('Received unexpected error code when returning'
+                    f'from S3 Select. Was: {err_code}')
+        except KeyError as ex:
+            logger.info('Failed to properly parse the S3 select exception.')
+        return 'Experienced a problem when querying from S3 select.'
 
-            # if there were any filtering params requested, apply those
-            self.filter_against_query_params(query_params)
-
-            # permits class-specific (i.e. implemented in child class)
-            # behavior, such as calculating row-wise means, which 
-            # can be made available on numeric tables, for instance.
-            self._resource_specific_modifications()
-
-            self.perform_sorting(query_params)
-
-            return self.table
-
-        # for these first two exceptions, we already have logged
-        # any problems when we called the `read_resource` method
-        except ParserNotFoundException as ex:
-            raise ex
-        except ParseException as ex:
-            raise ex
-        # catch any other types of exceptions that we did not anticipate.
+    def _issue_s3_select_query(self, resource_instance, sql):
+        logger.info(f'About to issue s3 select on resource ({resource_instance.pk})'
+                    f' with SQL: {sql}')
+        try:
+            s = self._make_s3_select(resource_instance.datafile.name, sql)
         except Exception as ex:
-            logger.error('An unexpected error occurred when preparing'
-                f' a resource preview for resource ({resource_instance.pk}).'
-                f' Exception was: {ex}')
+            err_str = self._handle_s3_select_problem(ex)
             raise ex
+        if len(s) == 0:
+            self.table = pd.DataFrame([])
+        else:
+            try:
+                q = [json.loads(x) for x in s.split(S3_RECORD_DELIMITER) if len(x) > 0]
+            except Exception as ex:
+                f = os.path.join(settings.TMP_DIR, 
+                        f'sql_dump.{resource_instance.pk}.{time.time()}.txt')
+                with open(f, 'w') as fout:
+                    fout.write(sql + '\n\n\n')
+                    fout.write(s)
+                logger.error('Failed to parse returned payload from S3 select as JSON.'
+                    f' Writing results to {f}.')
+                raise ex
+            
+            try:
+                self.table = pd.DataFrame(q).set_index(FIRST_COLUMN_ID, drop=True)
+            except KeyError as ex:
+                err_str = (f'Resource ({resource_instance.pk}) was missing the'
+                ' proper header for the first column')
+                logger.error(err_str)
+                alert_admins(err_str)
+                raise ex
+
+        # the data returned by s3 select is all string-based. The child
+        # class implementing the particular resource type should perform
+        # this cast (e.g. to int if an IntegerMatrix)
+        self._attempt_type_cast()
+
+    def _attempt_type_cast(self):
+        '''
+        This function is used to appropriately cast the contents of
+        the table.
+
+        We need this since the S3 select (if used), returns everything
+        as a string. We attempt to cast to the dtypes consistent with 
+        the resource type (e.g. integers for an IntegerMatrix resource)
+        '''
+        pass
+
+    def _get_local_contents(self, resource_instance, query_params={}, preview=False):
+        '''
+        Implementation that reads the file directly using the Django storages `open` method.
+        Regardless of the storage mechanism (S3, local disk), uses Pandas to parse/filter 
+        contents and returns a pd.Dataframe
+        '''
+        self.read_resource(resource_instance, preview=preview)
+
+        # if there were any filtering params requested, apply those
+        self.filter_against_query_params(query_params)
+
+        # permits class-specific (i.e. implemented in child class)
+        # behavior, such as calculating row-wise means, which 
+        # can be made available on numeric tables, for instance.
+        self._resource_specific_modifications()
+
+        self.perform_sorting(query_params)
+
+        return self.table
 
     def extract_metadata(self, resource_instance, parent_op_pk=None):
         '''
@@ -785,7 +1024,7 @@ class TableResource(DataResource):
         # into a user-associated directory. We only need the basename
         new_path = str(uuid.uuid4())
         with BytesIO() as fh:
-            self.table.to_csv(fh, sep='\t')
+            self.table.to_csv(fh, sep='\t', index_label=FIRST_COLUMN_ID)
             resource_instance.write_to_file(fh, new_path)
 
 
@@ -833,7 +1072,8 @@ class Matrix(TableResource):
         }
     ]
 
-    # looking for integers OR floats.  Both are acceptable  
+    # looking for integers OR floats.  Both are acceptable
+    TARGET_TYPE = 'float'
     TARGET_PATTERN = '(float|int)\d{0,2}'
 
     # Define some additional filtering/sorting params that
@@ -846,6 +1086,17 @@ class Matrix(TableResource):
         ROWMEAN_KEYWORD,
         INCLUDE_ROWMEANS
     ]
+
+    # This dict specifies whether the processing
+    # for the special/extra keyword filters will 
+    # require local processing (in case we are using
+    # S3 select). Certain aggregation operations cannot
+    # be performed by S3 select, so we need to fall back
+    # to local processing
+    REQUIRES_LOCAL_PROCESSING = {
+        ROWMEAN_KEYWORD: True,
+        INCLUDE_ROWMEANS: True
+    }
 
     # Copy the ignored params from the parent (don't want to modify that)
     IGNORED_QUERY_PARAMS = [x for x in TableResource.IGNORED_QUERY_PARAMS]
@@ -975,18 +1226,64 @@ class Matrix(TableResource):
         for p in self.EXTRA_MATRIX_QUERY_PARAMS:
             if p in query_params:
                 self.extra_query_params[p] = query_params[p]
+                if self.REQUIRES_LOCAL_PROCESSING[p]:
+                    self.requires_local_processing = True
+
+        # in addition to special queries for rowmeans, etc. we 
+        # need to check that queries for absolute values, etc.
+        # are also processed locally (or other comparisons)
+        for k,v in query_params.items():
+            split_v = v.split(settings.QUERY_PARAM_DELIMITER)
+            if len(split_v) == 2: # e.g. ('[abslt]', 0.2)
+                if split_v[0] in [settings.ABS_VAL_GREATER_THAN,
+                                  settings.ABS_VAL_LESS_THAN]:
+                    self.requires_local_processing = True
 
         # additional filtering/behavior specific to a Matrix (if requested)
         # is handled in the _resource_specific_modifications method
         return super().get_contents(resource_instance, query_params, preview)
 
+    def _attempt_type_cast(self):
+        '''
+        This function is used to appropriately cast the contents of
+        the table.
+
+        We need this since the S3 select (if used), returns everything
+        as a string. We attempt to cast to the dtypes consistent with 
+        the resource type (e.g. integers for an IntegerMatrix resource)
+        '''
+        # Note that IntegerMatrix types can technically include missing/NA values.
+        # The problem with that is that when s3 is queried, it will return 
+        # those NAs as empty string values. This precludes a simple cast if that's
+        # the case
+
+        # Attempt a simple, direct cast:
+        try:
+            self.table = self.table.astype(self.TARGET_TYPE)
+        except ValueError as ex:
+            # note that we previously validated this to be an integer matrix, 
+            # so we just have to massage it properly.
+
+            # replace any empty strings with np.nan. Note that this will ALSO
+            # preclude a cast using .astype('int'), BUT the previous validation
+            # means we are safe to then cast as a float
+            try:
+                self.table = self.table.replace('', np.nan).astype('float')
+
+            # in case something STILL does wrong...
+            except Exception as ex2:
+                err_msg = ('Failed to cast properly for payload'
+                            f' returned from S3 select. Issue was {ex2}')
+                logger.error(err_msg)
+                alert_admins(err_msg)
 
 class IntegerMatrix(Matrix):
     '''
     An `IntegerMatrix` further specializes the `Matrix`
     to admit only integers.
     '''
-    # looking for only integers. 
+    # looking for only integers.
+    TARGET_TYPE = 'int'
     TARGET_PATTERN = 'int\d{0,2}'
 
     DESCRIPTION = 'A table where all the entries are integers'\
@@ -1243,6 +1540,33 @@ class ElementTable(TableResource):
             # want the value:
             element_list.append(element.to_dict()['value'])
         return element_list
+
+    def _attempt_type_cast(self):
+        '''
+        This function is used to appropriately cast the contents of
+        the table.
+
+        We need this since the S3 select (if used), returns everything
+        as a string. We attempt to cast to the dtypes consistent with 
+        the resource type (e.g. integers for an IntegerMatrix resource)
+
+        One complex consideration with ElementTable's is that they
+        can contain mixed types (e.g. some columns could be numeric
+        and others could be strings)
+        '''
+        for c in self.table.columns:
+            try:
+                # attempt to replace any missing/blank values with nan and THEN cast
+                # as a float. If all the non-blank values were able to be cast as
+                # numbers, then we're good in taking this as a numeric column.
+                # Note that 'inf/-inf' are also interpreted during the cast
+                # (see unit tests)
+                self.table[c] = self.table[c].replace('', np.nan).astype('float')
+            except ValueError as ex:
+                # even after replacing empty strings with NaN, we could not cast.
+                # This means there's remaining strings that cannot be interpreted 
+                # as numbers. Can just leave as-is
+                pass
 
 
 class AnnotationTable(ElementTable):

@@ -1,5 +1,4 @@
 from io import BytesIO
-from re import L
 import unittest.mock as mock
 import os
 import uuid
@@ -13,7 +12,8 @@ from django.core.files import File
 from constants import TSV_FORMAT, \
     CSV_FORMAT, \
     XLS_FORMAT, \
-    XLSX_FORMAT
+    XLSX_FORMAT, \
+    FIRST_COLUMN_ID
 from api.models import Resource
 from resource_types.table_types import TableResource, \
     Matrix, \
@@ -205,6 +205,49 @@ class TestBasicTable(BaseAPITestCase):
         t.save_in_standardized_format(self.r, CSV_FORMAT)
         df = pd.read_table(self.r.datafile.open(), index_col=0)
         self.assertCountEqual(df.index.values, ['ENSG1','ENSG3'])
+
+    @mock.patch('resource_types.table_types.uuid')
+    def test_save_in_standard_adds_index_header(self, mock_uuid):
+        '''
+        This tests that we add a consistent identifier as a 
+        column header in the first column
+        '''
+        # check the situation where we are supplied a TSV
+        # and save to a TSV. Previously, this was not done
+        # and hence the final file still had the row of NAs.
+        t = TableResource()
+        associate_file_with_resource(self.r, os.path.join(
+            TESTDIR, 'test_table_with_full_na_row.tsv'))
+        is_valid, err = t.validate_type(self.r, TSV_FORMAT)
+        self.assertTrue(is_valid)
+        # check that we initially had a different name for the first col:
+        self.assertFalse(t.table.index.name == FIRST_COLUMN_ID)
+
+        u = uuid.uuid4()
+        mock_uuid.uuid4.return_value = u
+        t.save_in_standardized_format(self.r, TSV_FORMAT)
+        df = pd.read_table(self.r.datafile.open(), index_col=0)
+        self.assertCountEqual(df.index.values, ['ENSG1','ENSG3'])
+        # check that the index identifier is now changed
+        self.assertTrue(df.index.name == FIRST_COLUMN_ID)
+
+        # now load a file where the first column header
+        # was blank
+        t = TableResource()
+        associate_file_with_resource(self.r, os.path.join(
+            TESTDIR, 'test_integer_matrix.no_gene_label.tsv'))
+        is_valid, err = t.validate_type(self.r, TSV_FORMAT)
+        self.assertTrue(is_valid)
+        # check that we initially had a different name for the first col:
+        self.assertFalse(t.table.index.name == FIRST_COLUMN_ID)
+
+        u = uuid.uuid4()
+        mock_uuid.uuid4.return_value = u
+        t.save_in_standardized_format(self.r, TSV_FORMAT)
+        df = pd.read_table(self.r.datafile.open(), index_col=0)
+
+        # check that the index identifier is now changed
+        self.assertTrue(df.index.name == FIRST_COLUMN_ID)
 
     def test_handles_excel_table_without_header(self):
         t = TableResource()
