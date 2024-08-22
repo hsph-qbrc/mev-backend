@@ -32,6 +32,7 @@ class mevapi (
   Optional[String]        $django_settings_module,
   String                  $django_superuser_email,
   String                  $django_superuser_password,
+  String                  $efs_mount = '/mnt/efs'
   Optional[String]        $email_host = '',
   Optional[String]        $email_host_user = '',
   Optional[String]        $email_host_password = '',
@@ -121,6 +122,24 @@ class mevapi (
       group  => $app_group,
       require => Mount[$data_root]
     }
+
+    # create the mount point dir:
+      file { $efs_mount:
+      ensure => directory,
+      owner  => $app_user,
+      group  => $app_group,
+      mode   => '0755',
+    }
+
+    # Mount the EFS filesystem
+    mount { $efs_mount:
+      ensure  => mounted,
+      device  => "${aws_efs_id}.efs.${aws_region}.amazonaws.com:/",
+      fstype  => 'nfs4',
+      options => 'nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport',
+      require => File[$efs_mount],
+    }
+
   }
 
   $mev_dependencies = [
@@ -138,6 +157,7 @@ class mevapi (
     'libsqlite3-dev',
     'libpq-dev',
     'nano',
+    'nfs-common',
     'git',
     'curl',
     'pkg-config',
