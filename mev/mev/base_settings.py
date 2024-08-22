@@ -284,6 +284,7 @@ if get_env('ENABLE_REMOTE_JOB_RUNNERS') == 'yes':
     AWS_ECS_TASK_ROLE = get_env('AWS_ECS_TASK_ROLE')
     AWS_EFS_ACCESS_POINT = get_env('AWS_EFS_ACCESS_POINT')
     AWS_EFS_ID = get_env('AWS_EFS_ID')
+    AWS_EFS_MOUNT = get_env('EFS_MOUNT')
     AWS_LOG_GROUP = get_env('CLOUDWATCH_LOG_GROUP')
     AWS_ECS_LOG_GROUP = get_env('AWS_ECS_LOG_GROUP')
 

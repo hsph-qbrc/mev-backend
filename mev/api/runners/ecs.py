@@ -4,6 +4,7 @@ import json
 import uuid
 import datetime
 import shlex
+from shutil import rmtree
 
 from django.conf import settings
 
@@ -656,6 +657,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
             executed_op.job_failed = True
             executed_op.error_messages = self._check_logs(job_info)
             executed_op.status = ExecutedOperation.COMPLETION_ERROR
+            alert_admins(f'ECS-based job ({str(executed_op.pk)}) failed.')
         else:
             logger.info('In finalize, unexpected exit status')
             logger.info(json.dumps(job_info, indent=2, default=str))
@@ -666,6 +668,20 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
 
         executed_op.execution_stop_datetime = datetime.datetime.now()
         executed_op.save()
+
+        # need to clean-up the EFS now that we have completed
+        self._clean_efs(executed_op)
+
+
+    def _clean_efs(self, executed_op):
+        d = f'{settings.AWS_EFS_MOUNT}/share/{executed_op.pk}'
+        if not executed_op.job_failed:
+            logger.info('Since job completed successfully, remove the working'
+                f' directory on EFS at {d}')
+            rmtree(d)
+        else:
+            logger.info(f'Since job failed, the directory at {d}'
+                ' will be preserved.')
 
     def _check_logs(self, job_info):
         containers = job_info['containers']

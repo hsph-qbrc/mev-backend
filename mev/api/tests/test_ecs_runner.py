@@ -531,8 +531,7 @@ class ECSRunnerTester(BaseAPITestCase):
         is_running = runner._parse_task_status_response(mock_success_response)
         self.assertFalse(is_running)
         
-    @mock.patch('api.runners.ecs.alert_admins')
-    def test_parse_task_status_response_case2(self, mock_alert_admins):
+    def test_parse_task_status_response_case2(self):
         '''
         Test that we issue an 'is finished' response
         if the task has a STOPPED status and NOT all exit codes
@@ -563,7 +562,6 @@ class ECSRunnerTester(BaseAPITestCase):
 
         is_running = runner._parse_task_status_response(mock_success_response)
         self.assertFalse(is_running)
-        mock_alert_admins.assert_called()
 
     def test_parse_task_status_response_case1(self):
         '''
@@ -587,7 +585,10 @@ class ECSRunnerTester(BaseAPITestCase):
         self.assertTrue(is_running)
 
     @mock.patch('api.runners.ecs.alert_admins')
-    def test_finalization(self, mock_alert_admins):
+    def test_finalization_case1(self, mock_alert_admins):
+        '''
+        Tests the successful run case
+        '''
         runner = ECSRunner()
 
         # patch a couple methods on the class:
@@ -600,6 +601,9 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_final_outputs = {'outputA': 'something'}
         mock_convert_outputs.return_value =  mock_final_outputs
         runner._convert_outputs = mock_convert_outputs
+
+        mock_clean_efs = mock.MagicMock()
+        runner._clean_efs = mock_clean_efs
 
         mock_get_ecs_task_info = mock.MagicMock()
         mock_info = {
@@ -622,3 +626,147 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_locate_outputs.assert_called_once_with('my-pk')
         mock_convert_outputs.assert_called_once_with(mock_ex_op, mock_op, mock_initial_outputs_dict)
         self.assertDictEqual(mock_ex_op.outputs, mock_final_outputs)
+
+    @mock.patch('api.runners.ecs.alert_admins')
+    def test_finalization_case2(self, mock_alert_admins):
+        '''
+        Tests the case where the analysis task fails for some reason
+        '''
+        runner = ECSRunner()
+
+        # patch a couple methods on the class:
+        mock_locate_outputs = mock.MagicMock()
+        mock_initial_outputs_dict = {'outputA': 1}
+        mock_locate_outputs.return_value = mock_initial_outputs_dict
+        runner._locate_outputs = mock_locate_outputs
+
+        mock_convert_outputs = mock.MagicMock()
+        mock_final_outputs = {'outputA': 'something'}
+        mock_convert_outputs.return_value =  mock_final_outputs
+        runner._convert_outputs = mock_convert_outputs
+
+        mock_clean_efs = mock.MagicMock()
+        runner._clean_efs = mock_clean_efs
+
+        mock_check_logs = mock.MagicMock()
+        runner._check_logs = mock_check_logs
+
+        mock_get_ecs_task_info = mock.MagicMock()
+        mock_info = {
+            'tasks': [
+                {
+                    'stopCode': 'TaskFailedToStart'
+                }
+            ]
+        }
+        mock_get_ecs_task_info.return_value = mock_info
+        runner._get_ecs_task_info = mock_get_ecs_task_info
+
+        mock_ex_op = mock.MagicMock()
+        mock_ex_op.pk = 'my-pk'
+        mock_ex_op.job_id = 'job-id'
+        mock_op = mock.MagicMock()
+        runner.finalize(mock_ex_op, mock_op)
+        mock_get_ecs_task_info.assert_called_once_with('job-id')
+        mock_alert_admins.assert_called()
+        mock_locate_outputs.assert_not_called()
+        mock_convert_outputs.assert_not_called()
+
+        mock_check_logs.assert_called()
+
+    def test_check_logs(self):
+        mock_job_info = {
+            "containers" : [
+                {
+                    "containerArn": "arn:aws:ecs:us-east-2:286060835461:container/dev-mev-ecs-cluster/1dc4f34f3df340f2a6a35a3824b4fde5/250931b6-fcfd-4b93-b845-f01012daefb0",
+                    "taskArn": "arn:aws:ecs:us-east-2:286060835461:task/dev-mev-ecs-cluster/1dc4f34f3df340f2a6a35a3824b4fde5",
+                    "name": "file-pusher",
+                    "image": "amazon/aws-cli:latest",
+                    "imageDigest": "sha256:3a97c55bad2d70a7adb2a4b9e6d84de1eb45bf019a2791781ddc33f47ea1c8bb",
+                    "runtimeId": "1dc4f34f3df340f2a6a35a3824b4fde5-1993217325",
+                    "lastStatus": "STOPPED",
+                    "networkInterfaces": [
+                        {
+                        "attachmentId": "755872a2-1c06-441c-9587-ef3544911899",
+                        "privateIpv4Address": "172.16.0.54",
+                        "ipv6Address": "2600:1f16:1924:e500:cb19:5f2e:26cd:a3a8"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "cpu": "256",
+                    "memory": "512"
+                    },
+                    {
+                    "containerArn": "arn:aws:ecs:us-east-2:286060835461:container/dev-mev-ecs-cluster/1dc4f34f3df340f2a6a35a3824b4fde5/89ba8b7d-7d53-4e09-8934-576d43571683",
+                    "taskArn": "arn:aws:ecs:us-east-2:286060835461:task/dev-mev-ecs-cluster/1dc4f34f3df340f2a6a35a3824b4fde5",
+                    "name": "analysis",
+                    "image": "ghcr.io/web-mev/mev-limma-voom:sha-acad58346d00a81305f6cc39652904d515f406b7",
+                    "imageDigest": "sha256:4ecd0e0f7d3f4dd753645e4eceb49e342e58e8f2fda4234e24eb4568c0863c13",
+                    "runtimeId": "1dc4f34f3df340f2a6a35a3824b4fde5-3156543011",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 1,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                        "attachmentId": "755872a2-1c06-441c-9587-ef3544911899",
+                        "privateIpv4Address": "172.16.0.54",
+                        "ipv6Address": "2600:1f16:1924:e500:cb19:5f2e:26cd:a3a8"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "cpu": "2048",
+                    "memory": "16384"
+                    },
+                    {
+                    "containerArn": "arn:aws:ecs:us-east-2:286060835461:container/dev-mev-ecs-cluster/1dc4f34f3df340f2a6a35a3824b4fde5/daf52cb9-41f0-4e87-8498-2b227801070c",
+                    "taskArn": "arn:aws:ecs:us-east-2:286060835461:task/dev-mev-ecs-cluster/1dc4f34f3df340f2a6a35a3824b4fde5",
+                    "name": "file-retriever",
+                    "image": "amazon/aws-cli:latest",
+                    "imageDigest": "sha256:3a97c55bad2d70a7adb2a4b9e6d84de1eb45bf019a2791781ddc33f47ea1c8bb",
+                    "runtimeId": "1dc4f34f3df340f2a6a35a3824b4fde5-3349646512",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 0,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                        "attachmentId": "755872a2-1c06-441c-9587-ef3544911899",
+                        "privateIpv4Address": "172.16.0.54",
+                        "ipv6Address": "2600:1f16:1924:e500:cb19:5f2e:26cd:a3a8"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "cpu": "256",
+                    "memory": "512"
+                }
+            ]
+        }
+
+        runner = ECSRunner()
+        mock_query_logs = mock.MagicMock()
+        mock_query_logs.return_value = ['a','b']
+        runner._query_log_stream = mock_query_logs
+        result = runner._check_logs(mock_job_info)
+        self.assertCountEqual(result, ['a','b'])
+        mock_query_logs.assert_called_once_with(
+            'analysis', '1dc4f34f3df340f2a6a35a3824b4fde5')
+
+    @override_settings(AWS_EFS_MOUNT='/mnt/efs')
+    @mock.patch('api.runners.ecs.rmtree')
+    def test_clean_efs_on_success(self, mock_rmtree):
+        runner = ECSRunner()
+        mock_ex_op = mock.MagicMock()
+        mock_ex_op.job_failed = False
+        mock_ex_op.pk = 'my-pk'
+        runner._clean_efs(mock_ex_op)
+        target_path = '/mnt/efs/share/my-pk'
+        mock_rmtree.assert_called_once_with(target_path)
+
+    @override_settings(AWS_EFS_MOUNT='/mnt/efs')
+    @mock.patch('api.runners.ecs.rmtree')
+    def test_skip_clean_efs_on_job_fail(self, mock_rmtree):
+        runner = ECSRunner()
+        mock_ex_op = mock.MagicMock()
+        mock_ex_op.job_failed = True
+        mock_ex_op.pk = 'my-pk'
+        runner._clean_efs(mock_ex_op)
+        mock_rmtree.assert_not_called()
