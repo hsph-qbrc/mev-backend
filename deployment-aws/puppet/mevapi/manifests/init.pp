@@ -32,7 +32,7 @@ class mevapi (
   Optional[String]        $django_settings_module,
   String                  $django_superuser_email,
   String                  $django_superuser_password,
-  String                  $efs_mount = '/mnt/efs'
+  String                  $efs_mount = '/mnt/efs',
   Optional[String]        $email_host = '',
   Optional[String]        $email_host_user = '',
   Optional[String]        $email_host_password = '',
