@@ -792,3 +792,37 @@ class ECSSingleVariableDataResourceConverter(
         full_s3_path = f'{S3_PREFIX}{src_bucket}/{object}'
         return self._convert_output(
             executed_op, workspace, output_definition, full_s3_path)
+
+
+class ECSMultipleVariableDataResourceConverter(
+        BaseResourceConverter,
+        RemoteResourceMixin,
+        MultipleDataResourceMixin,
+        VariableDataResourceMixin):
+    '''
+    This converter takes a DataResource instance (for >1 file) and
+    returns the path to the remote files as a list. Typically, this 
+    is then used with a mixin class to format the paths as a comma-delimited
+    list, a space-delimited list, etc.
+
+    For example, given the following DataResource:
+    {
+        'attribute_type': 'VariableDataResource', 
+        'value': [<UUID>, <UUID>, <UUID>]
+    }
+
+    This converter takes the list UUIDs, finds each Resource/file, brings it local,
+    copies to a staging dir and returns a list of paths to those copies.
+    '''
+
+    def convert_input(self, user_input, op_dir, staging_dir):
+        return self._convert_input(user_input, staging_dir)
+
+    def convert_output(self, 
+        executed_op, workspace, output_definition, output_val):
+        '''
+        This converts multiple output resources (paths) to Resource instances
+        and returns their pk/UUIDs for the newly created database resources.
+        '''
+        return self._convert_output(
+            executed_op, workspace, output_definition, output_val)

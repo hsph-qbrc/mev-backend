@@ -43,7 +43,8 @@ from api.converters.data_resource import \
     RemoteResourceMixin, \
     RemoteNextflowSingleVariableDataResourceConverter, \
     ECSSingleDataResourceConverter, \
-    ECSSingleVariableDataResourceConverter
+    ECSSingleVariableDataResourceConverter, \
+    ECSMultipleVariableDataResourceConverter
     # RemoteNextflowMultipleDataResourceConverter, \
 
 from api.converters.element_set import ObservationSetCsvConverter, \
@@ -2066,3 +2067,31 @@ class TestNextflowSingleResourceConverter(BaseAPITestCase):
             mock_output_def,
             f's3://job-bucket/{my_uuid}/foo.tsv'
         )
+
+class TestECSMultipleVariableDataResourceConverter(BaseAPITestCase):
+
+    @mock.patch('api.converters.data_resource.get_resource_by_pk')
+    @mock.patch('api.converters.data_resource.default_storage')
+    def test_input_conversion(self, mock_storage, mock_get_resource_by_pk):
+
+        mock_resource1 = mock.MagicMock()
+        mock_resource1.datafile.name = 'name1'
+
+        mock_resource2 = mock.MagicMock()
+        mock_resource2.datafile.name = 'name2'
+
+        mock_get_resource_by_pk.side_effect =  [mock_resource1, mock_resource2]
+
+        mock_storage.get_absolute_path.side_effect = [
+            's3://some-bucket/obj1', 's3://some-bucket/obj2']
+        c = ECSMultipleVariableDataResourceConverter()
+        result = c.convert_input(['pk1', 'pk2'], '', '')
+        self.assertEqual(['s3://some-bucket/obj1', 's3://some-bucket/obj2'], result)
+        mock_storage.get_absolute_path.assert_has_calls([
+            mock.call('name1'),
+            mock.call('name2')
+        ])
+        mock_get_resource_by_pk.assert_has_calls([
+            mock.call('pk1'),
+            mock.call('pk2')
+        ])
