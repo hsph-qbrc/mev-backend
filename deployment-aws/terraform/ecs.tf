@@ -77,7 +77,8 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role" {
 
 
 resource "aws_cloudwatch_log_group" "ecs" {
-  name = "${local.common_tags.Name}-ecs-logs"
+  name              = "${local.common_tags.Name}-ecs-logs"
+  retention_in_days = 7
 }
 
 
