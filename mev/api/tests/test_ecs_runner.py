@@ -436,7 +436,7 @@ class ECSRunnerTester(BaseAPITestCase):
     def test_output_copy_override(self):
         runner = ECSRunner()
         exec_op_uuid = 'abd-123'
-        cp_str = f'{ECSRunner.AWS_CLI_PATH} s3 cp --recursive {ECSRunner.EFS_DATA_DIR}/{exec_op_uuid} s3://job-bucket/{exec_op_uuid}/'
+        cp_str = f'{ECSRunner.AWS_CLI_PATH} s3 cp --recursive {ECSRunner.EFS_DATA_DIR}/{exec_op_uuid} s3://job-bucket/{exec_op_uuid}/ && rm -rf {ECSRunner.EFS_DATA_DIR}/{exec_op_uuid}'
         cmd = runner._create_output_copy_overrides(exec_op_uuid)
         self.assertEqual(cp_str, cmd[0])
 
@@ -602,8 +602,8 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_convert_outputs.return_value =  mock_final_outputs
         runner._convert_outputs = mock_convert_outputs
 
-        mock_clean_efs = mock.MagicMock()
-        runner._clean_efs = mock_clean_efs
+        mock_clean = mock.MagicMock()
+        runner._clean_job_bucket = mock_clean
 
         mock_get_ecs_task_info = mock.MagicMock()
         mock_info = {
@@ -626,6 +626,7 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_locate_outputs.assert_called_once_with('my-pk')
         mock_convert_outputs.assert_called_once_with(mock_ex_op, mock_op, mock_initial_outputs_dict)
         self.assertDictEqual(mock_ex_op.outputs, mock_final_outputs)
+        mock_clean.assert_called_once_with(mock_ex_op)
 
     @mock.patch('api.runners.ecs.alert_admins')
     def test_finalization_case2(self, mock_alert_admins):
@@ -645,8 +646,8 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_convert_outputs.return_value =  mock_final_outputs
         runner._convert_outputs = mock_convert_outputs
 
-        mock_clean_efs = mock.MagicMock()
-        runner._clean_efs = mock_clean_efs
+        mock_clean = mock.MagicMock()
+        runner._clean_job_bucket = mock_clean
 
         mock_check_logs = mock.MagicMock()
         runner._check_logs = mock_check_logs
@@ -671,7 +672,7 @@ class ECSRunnerTester(BaseAPITestCase):
         mock_alert_admins.assert_called()
         mock_locate_outputs.assert_not_called()
         mock_convert_outputs.assert_not_called()
-
+        mock_clean.assert_not_called()
         mock_check_logs.assert_called()
 
     def test_check_logs(self):
@@ -749,24 +750,3 @@ class ECSRunnerTester(BaseAPITestCase):
         self.assertCountEqual(result, ['a','b'])
         mock_query_logs.assert_called_once_with(
             'analysis', '1dc4f34f3df340f2a6a35a3824b4fde5')
-
-    @override_settings(AWS_EFS_MOUNT='/mnt/efs')
-    @mock.patch('api.runners.ecs.rmtree')
-    def test_clean_efs_on_success(self, mock_rmtree):
-        runner = ECSRunner()
-        mock_ex_op = mock.MagicMock()
-        mock_ex_op.job_failed = False
-        mock_ex_op.pk = 'my-pk'
-        runner._clean_efs(mock_ex_op)
-        target_path = '/mnt/efs/share/my-pk'
-        mock_rmtree.assert_called_once_with(target_path)
-
-    @override_settings(AWS_EFS_MOUNT='/mnt/efs')
-    @mock.patch('api.runners.ecs.rmtree')
-    def test_skip_clean_efs_on_job_fail(self, mock_rmtree):
-        runner = ECSRunner()
-        mock_ex_op = mock.MagicMock()
-        mock_ex_op.job_failed = True
-        mock_ex_op.pk = 'my-pk'
-        runner._clean_efs(mock_ex_op)
-        mock_rmtree.assert_not_called()

@@ -1,12 +1,13 @@
+from email.policy import default
 import logging
 import os
 import json
 import uuid
 import datetime
 import shlex
-from shutil import rmtree
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 
 import boto3
 import numpy as np
@@ -506,7 +507,12 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         src = f'{ECSRunner.EFS_DATA_DIR}/{execution_uuid}'
         dest = f'{S3_PREFIX}{settings.JOB_BUCKET_NAME}/{execution_uuid}/'
         cp_cmd = ECSRunner.AWS_DIR_CP_TEMPLATE.format(src=src, dest=dest)
-        return [cp_cmd]
+
+        # after the copy is complete, we clean-up the execution dir
+        # on the EFS volume
+        rm_cmd = f'rm -rf {src}'
+        final_cmd = f'{cp_cmd} && {rm_cmd}'
+        return [final_cmd]
         
     def _create_file_mapping(self, execution_uuid, op, arg_dict):
         '''
@@ -669,19 +675,22 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         executed_op.execution_stop_datetime = datetime.datetime.now()
         executed_op.save()
 
-        # need to clean-up the EFS now that we have completed
-        self._clean_efs(executed_op)
+        # if everything was a success, we can delete the temporary
+        # bucket storage
+        if executed_op.status == ExecutedOperation.COMPLETION_SUCCESS:
+            self._clean_job_bucket(executed_op)
 
+    def _clean_job_bucket(self, executed_op):
+        '''
+        After the files have been transferred from the job/sandbox bucket
+        to final storage, we can delete the 
+        '''
+        bucket_dir = f'{S3_PREFIX}{settings.JOB_BUCKET_NAME}/{executed_op.pk}/'
 
-    def _clean_efs(self, executed_op):
-        d = f'{settings.AWS_EFS_MOUNT}/share/{executed_op.pk}'
-        if not executed_op.job_failed:
-            logger.info('Since job completed successfully, remove the working'
-                f' directory on EFS at {d}')
-            rmtree(d)
-        else:
-            logger.info(f'Since job failed, the directory at {d}'
-                ' will be preserved.')
+        # this returns a list of paths in the job bucket, given as s3://... 
+        file_list = default_storage.get_file_listing(bucket_dir)
+        for f in file_list:
+            default_storage.delete_object(f)
 
     def _check_logs(self, job_info):
         containers = job_info['containers']
