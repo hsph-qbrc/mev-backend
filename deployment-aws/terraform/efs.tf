@@ -30,17 +30,6 @@ resource "aws_security_group" "efs_security_group" {
 
 resource "aws_efs_access_point" "efs_ap" {
   file_system_id = aws_efs_file_system.efs.id
-  root_directory {
-    path = "/share"
-    creation_info {
-      # these UID/GID are set by the mambaorg/micromamba
-      # Docker image. Otherwise, we can't write to
-      # the volume
-      owner_gid   = 57439
-      owner_uid   = 57439
-      permissions = 0755
-    }
-  }
 }
 
 # mount point in public subnet "public"
