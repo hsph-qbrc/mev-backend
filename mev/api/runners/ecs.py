@@ -356,7 +356,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
                 {
                     "sourceVolume": ECSRunner.EFS_VOLUME_ALIAS,
                     "containerPath": ECSRunner.EFS_DATA_DIR,
-                    "readOnly": True
+                    "readOnly": False
                 }
             ],
             "logConfiguration": {
