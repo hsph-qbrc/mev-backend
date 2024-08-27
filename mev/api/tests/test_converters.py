@@ -3,6 +3,8 @@ import unittest.mock as mock
 import uuid
 import tempfile
 
+from django.test import override_settings
+
 from exceptions import AttributeValueError, \
     DataStructureValidationException, \
     StringIdentifierException, \
@@ -38,8 +40,11 @@ from api.converters.data_resource import \
     LocalDockerCsvResourceConverter, \
     LocalDockerSpaceDelimResourceConverter, \
     RemoteNextflowSingleDataResourceConverter, \
-    RemoteNextflowResourceMixin, \
-    RemoteNextflowSingleVariableDataResourceConverter
+    RemoteResourceMixin, \
+    RemoteNextflowSingleVariableDataResourceConverter, \
+    ECSSingleDataResourceConverter, \
+    ECSSingleVariableDataResourceConverter, \
+    ECSMultipleVariableDataResourceConverter
     # RemoteNextflowMultipleDataResourceConverter, \
 
 from api.converters.element_set import ObservationSetCsvConverter, \
@@ -801,7 +806,7 @@ class TestLocalResourceMixin(BaseAPITestCase):
                 workspace=mock_workspace
             )
 
-class TestRemoteNextflowResourceMixin(BaseAPITestCase):
+class TestRemoteResourceMixin(BaseAPITestCase):
 
     @mock.patch('api.converters.data_resource.default_storage')
     def test_create_workspace_resource(self, mock_default_storage):
@@ -818,7 +823,7 @@ class TestRemoteNextflowResourceMixin(BaseAPITestCase):
         mock_path = '/some/path/file.txt'
         mock_name = 'abc'
 
-        c = RemoteNextflowResourceMixin()
+        c = RemoteResourceMixin()
         r = c._create_resource(mock_executed_op, mock_workspace, mock_path, mock_name)
         self.assertEqual(r, mock_resource)
         mock_create_resource_from_interbucket_copy.assert_called_once_with(
@@ -847,7 +852,7 @@ class TestRemoteNextflowResourceMixin(BaseAPITestCase):
         mock_path = '/some/path/file.txt'
         mock_name = 'abc'
 
-        c = RemoteNextflowResourceMixin()
+        c = RemoteResourceMixin()
         r = c._create_resource(mock_executed_op, None, mock_path, mock_name)
         self.assertEqual(r, mock_resource)
         mock_create_resource_from_interbucket_copy.assert_called_once_with(
@@ -1996,3 +2001,97 @@ class TestNextflowSingleResourceConverter(BaseAPITestCase):
             'MTX',
             'TSV'
         )
+
+
+class TestECSSingleVariableDataResourceConverter(BaseAPITestCase):
+    @mock.patch('api.converters.data_resource.get_resource_by_pk')
+    @mock.patch('api.converters.data_resource.default_storage')
+    def test_input_conversion(self, mock_storage, mock_get_resource_by_pk):
+        mock_resource = mock.MagicMock()
+        mock_resource.datafile.name = 'some-name'
+        mock_get_resource_by_pk.return_value =  mock_resource
+        mock_storage.get_absolute_path.return_value = 's3://some-bucket/some-obj'
+        c = ECSSingleDataResourceConverter()
+        c.convert_input('some-pk', '', '')
+        mock_storage.get_absolute_path.assert_called_with('some-name')
+        mock_get_resource_by_pk.assert_called_with('some-pk')
+
+    @override_settings(JOB_BUCKET_NAME='job-bucket')
+    def test_output_conversion(self):
+        c = ECSSingleDataResourceConverter()
+        mock_private_convert = mock.MagicMock()
+        c._convert_output = mock_private_convert
+        mock_ex_op = mock.MagicMock()
+        my_uuid = 'some-uuid'
+        mock_ex_op.pk = my_uuid
+        mock_workspace = mock.MagicMock()
+        mock_output_def = mock.MagicMock()
+        output_val = f'/data/{my_uuid}/foo.tsv'
+        c.convert_output(mock_ex_op, mock_workspace, mock_output_def, output_val)
+        mock_private_convert.assert_called_once_with(
+            mock_ex_op,
+            mock_workspace, 
+            mock_output_def,
+            f's3://job-bucket/{my_uuid}/foo.tsv'
+        )
+
+class TestNextflowSingleResourceConverter(BaseAPITestCase):
+
+    @mock.patch('api.converters.data_resource.get_resource_by_pk')
+    @mock.patch('api.converters.data_resource.default_storage')
+    def test_input_conversion(self, mock_storage, mock_get_resource_by_pk):
+        mock_resource = mock.MagicMock()
+        mock_resource.datafile.name = 'some-name'
+        mock_get_resource_by_pk.return_value =  mock_resource
+        mock_storage.get_absolute_path.return_value = 's3://some-bucket/some-obj'
+        c = ECSSingleDataResourceConverter()
+        c.convert_input('some-pk', '', '')
+        mock_storage.get_absolute_path.assert_called_with('some-name')
+        mock_get_resource_by_pk.assert_called_with('some-pk')
+    
+    @override_settings(JOB_BUCKET_NAME='job-bucket')
+    def test_output_conversion(self):
+        c = ECSSingleDataResourceConverter()
+        mock_private_convert = mock.MagicMock()
+        c._convert_output = mock_private_convert
+        mock_ex_op = mock.MagicMock()
+        my_uuid = 'some-uuid'
+        mock_ex_op.pk = my_uuid
+        mock_workspace = mock.MagicMock()
+        mock_output_def = mock.MagicMock()
+        output_val = f'/data/{my_uuid}/foo.tsv'
+        c.convert_output(mock_ex_op, mock_workspace, mock_output_def, output_val)
+        mock_private_convert.assert_called_once_with(
+            mock_ex_op,
+            mock_workspace, 
+            mock_output_def,
+            f's3://job-bucket/{my_uuid}/foo.tsv'
+        )
+
+class TestECSMultipleVariableDataResourceConverter(BaseAPITestCase):
+
+    @mock.patch('api.converters.data_resource.get_resource_by_pk')
+    @mock.patch('api.converters.data_resource.default_storage')
+    def test_input_conversion(self, mock_storage, mock_get_resource_by_pk):
+
+        mock_resource1 = mock.MagicMock()
+        mock_resource1.datafile.name = 'name1'
+
+        mock_resource2 = mock.MagicMock()
+        mock_resource2.datafile.name = 'name2'
+
+        mock_get_resource_by_pk.side_effect =  [mock_resource1, mock_resource2]
+
+        mock_storage.get_absolute_path.side_effect = [
+            's3://some-bucket/obj1', 's3://some-bucket/obj2']
+        c = ECSMultipleVariableDataResourceConverter()
+        result = c.convert_input(['pk1', 'pk2'], '', '')
+        self.assertEqual(['s3://some-bucket/obj1', 's3://some-bucket/obj2'], result)
+        mock_storage.get_absolute_path.assert_has_calls([
+            mock.call('name1'),
+            mock.call('name2')
+        ])
+        mock_get_resource_by_pk.assert_has_calls([
+            mock.call('pk1'),
+            mock.call('pk2')
+        ])

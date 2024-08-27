@@ -1,9 +1,12 @@
 import os
+import uuid
 import logging
 from shutil import rmtree
 
 from django.conf import settings
 from django.utils.module_loading import import_string
+
+from jinja2 import Template
 
 from exceptions import OutputConversionException, \
     MissingRequiredFileException
@@ -47,8 +50,7 @@ class OperationRunner(object):
         '''
         pass
 
-
-    def prepare_operation(self, operation_dir, repo_name, git_hash):
+    def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
         Used during ingestion to perform setup/prep before an operation can 
         be executed. Use for things like building docker images, etc.
@@ -57,6 +59,22 @@ class OperationRunner(object):
         execution mode.
         '''
         pass
+
+    def run(self, executed_op, op, validated_inputs):
+        '''
+        Used to start a job execution. Does nothing unless
+        overidden.
+        '''
+        logger.info(f'Executed op ID: {executed_op.id}')
+        logger.info(f'Op data: {op.to_dict()}')
+        logger.info(f'Validated inputs: {validated_inputs}')
+
+    def check_status(self, job_id):
+        '''
+        Method used by all runners to determine when job
+        is complete. Returns boolean
+        '''
+        raise NotImplementedError()
 
     def check_required_files(self, operation_dir):
         '''
@@ -230,3 +248,32 @@ class OperationRunner(object):
         execution_dir = os.path.join(
             settings.OPERATION_EXECUTION_DIR, str(job_id))
         rmtree(execution_dir)
+
+
+class TemplatedCommandMixin(object):
+
+    def _get_entrypoint_command(self, entrypoint_file_path, arg_dict):
+        '''
+        Takes the entrypoint command file (a template) and the input
+        args and returns a formatted string which will be used as the 
+        command for the Docker container.
+        '''
+        if not os.path.exists(entrypoint_file_path):
+            err_msg = ('Could not find the required entrypoint'
+                f' file at {entrypoint_file_path}.')
+            logger.error(err_msg)
+            raise Exception(err_msg)
+
+        # read the template command
+        entrypoint_cmd_template = Template(
+            open(entrypoint_file_path, 'r').read())
+        try:
+            entrypoint_cmd = entrypoint_cmd_template.render(arg_dict)
+            return entrypoint_cmd
+        except Exception as ex:
+            logger.error('An exception was raised when constructing the'
+                         ' entrypoint command from the templated string.'
+                         f' Exception was: {ex}')
+            raise Exception('Failed to construct command to execute'
+                            ' local Docker container. See logs.'
+                            )

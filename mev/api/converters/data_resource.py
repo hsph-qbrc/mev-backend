@@ -3,7 +3,7 @@ import logging
 
 from django.core.files import File
 from django.core.files.storage import default_storage
-from numpy import result_type
+from django.conf import settings
 
 from exceptions import OutputConversionException, StorageException
 
@@ -14,7 +14,7 @@ from api.utilities.resource_utilities import get_resource_by_pk, \
     retrieve_resource_class_standard_format, \
     create_resource
 from api.utilities.admin_utils import alert_admins
-
+from api.storage import S3_PREFIX
 from api.converters.mixins import CsvMixin, SpaceDelimMixin
 from api.models import ResourceMetadata
 
@@ -233,7 +233,7 @@ class VariableDataResourceMixin(object):
             return (p, resource_type)
         else:
             raise OutputConversionException('The specified resource type of'
-                                    f' {result_type} was not consistent'
+                                    f' {resource_type} was not consistent'
                                     ' with the permitted types of'
                                     f' {",".join(potential_resource_types)}'
                                     )
@@ -356,10 +356,12 @@ class LocalResourceMixin(object):
         )
 
 
-class RemoteNextflowResourceMixin(object):
+class RemoteResourceMixin(object):
     '''
     Contains behavior for DataResource conversion related to
-    the remote Nextflow runner.
+    the remote storage (bucket). Can be used with Nextflow
+    or ECS-based runners which directly access files stored
+    in buckets.
     '''
 
     def _convert_resource_input(self, resource_uuid, staging_dir):
@@ -381,7 +383,7 @@ class RemoteNextflowResourceMixin(object):
         Note that `path` is the path in the Nextflow bucket and 
         we have to move the file into WebMeV storage.
         '''
-        logger.info('From executed operation outputs based on a remote Nextflow'
+        logger.info('From executed operation outputs based on a remote'
                     f'-based job, create a resource with name {name}')
         try:
             r = default_storage.create_resource_from_interbucket_copy(
@@ -393,7 +395,7 @@ class RemoteNextflowResourceMixin(object):
             r.name = name
             return r
         except Exception as ex:
-            logger.info('Caught exception when copying a Nextflow job output'
+            logger.info('Caught exception when copying a Remote job output'
                         ' to our storage. Removing the dummy Resource'
                         ' and re-raising.')
             raise ex
@@ -619,7 +621,7 @@ class LocalDockerSpaceDelimResourceConverter(
 
 class RemoteNextflowSingleDataResourceConverter(
     BaseResourceConverter,
-    RemoteNextflowResourceMixin,
+    RemoteResourceMixin,
     SingleDataResourceMixin,
     DataResourceMixin
 ):
@@ -660,7 +662,7 @@ class RemoteNextflowSingleDataResourceConverter(
 
 class RemoteNextflowSingleVariableDataResourceConverter(
     BaseResourceConverter,
-    RemoteNextflowResourceMixin,
+    RemoteResourceMixin,
     SingleDataResourceMixin,
     VariableDataResourceMixin
 ):
@@ -726,3 +728,101 @@ class RemoteNextflowSingleVariableDataResourceConverter(
 #         '''
 #         return self._convert_output(
 #             executed_op, workspace, output_definition, output_val)
+
+class ECSSingleDataResourceConverter(
+    BaseResourceConverter,
+    RemoteResourceMixin,
+    SingleDataResourceMixin,
+    DataResourceMixin
+):
+    '''
+    This converter (for inputs) takes a DataResource instance (for a single file,
+    which is simply a UUID) and returns the path to 
+    the file in cloud storage.
+
+    Note that if remote execution is enabled, we do not allow local storage, 
+    so we do not need to handle cases where we might have to push a 
+    local file into cloud-based storage.
+    '''
+
+    def convert_input(self, user_input, op_dir, staging_dir):
+        return self._convert_resource_input(user_input, staging_dir)
+
+    def convert_output(
+            self, executed_op, workspace, output_definition, output_val):
+        '''
+        This converts a single output resource (a path) to a Resource instance
+        and returns the pk/UUID for that newly created database resource.
+        '''
+        src_bucket = settings.JOB_BUCKET_NAME
+        object = f'{executed_op.pk}/{os.path.basename(output_val)}'
+        full_s3_path = f'{S3_PREFIX}{src_bucket}/{object}'
+        return self._convert_output(
+            executed_op, workspace, output_definition, full_s3_path)
+
+
+class ECSSingleVariableDataResourceConverter(
+    BaseResourceConverter,
+    RemoteResourceMixin,
+    SingleDataResourceMixin,
+    VariableDataResourceMixin
+):
+    '''
+    This converter takes a VariableDataResource instance 
+    (for a single file,which is simply a UUID) and returns 
+    the path to the file in cloud storage.
+    '''
+
+    def convert_input(self, user_input, op_dir, staging_dir):
+        return self._convert_resource_input(user_input, staging_dir)
+
+    def convert_output(
+            self, executed_op, workspace, output_definition, output_val):
+        '''
+        This converts a single output resource (a path) to a Resource instance
+        and returns the pk/UUID for that newly created database resource.
+        '''
+        # for ECS tasks, the output value is actually a local path on 
+        # the EFS volume mounted in the container 
+        # (e.g. /data/<job ID>/<output name>).
+        # However, based on how the files are copied out, we can simply get
+        # the basename of each and easily locate in the ECS output bucket
+        src_bucket = settings.JOB_BUCKET_NAME
+        object = f'{executed_op.pk}/{os.path.basename(output_val)}'
+        full_s3_path = f'{S3_PREFIX}{src_bucket}/{object}'
+        return self._convert_output(
+            executed_op, workspace, output_definition, full_s3_path)
+
+
+class ECSMultipleVariableDataResourceConverter(
+        BaseResourceConverter,
+        RemoteResourceMixin,
+        MultipleDataResourceMixin,
+        VariableDataResourceMixin):
+    '''
+    This converter takes a DataResource instance (for >1 file) and
+    returns the path to the remote files as a list. Typically, this 
+    is then used with a mixin class to format the paths as a comma-delimited
+    list, a space-delimited list, etc.
+
+    For example, given the following DataResource:
+    {
+        'attribute_type': 'VariableDataResource', 
+        'value': [<UUID>, <UUID>, <UUID>]
+    }
+
+    This converter takes the list UUIDs, finds each Resource/file, brings it local,
+    copies to a staging dir and returns a list of paths to those copies.
+    '''
+
+    def convert_input(self, user_input, op_dir, staging_dir):
+        return self._convert_input(user_input, staging_dir)
+
+    def convert_output(self, 
+        executed_op, workspace, output_definition, output_val):
+        '''
+        This converts multiple output resources (paths) to Resource instances
+        and returns their pk/UUIDs for the newly created database resources.
+        '''
+        return self._convert_output(
+            executed_op, workspace, output_definition, output_val)

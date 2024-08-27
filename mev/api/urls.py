@@ -42,6 +42,7 @@ urlpatterns = [
     path('resources/<uuid:pk>/metadata/features/', api.views.ResourceMetadataFeaturesView.as_view(), name='resource-metadata-features'),
     path('resources/<uuid:pk>/metadata/parent/', api.views.ResourceMetadataParentOperationView.as_view(), name='resource-metadata-parent-operation'),
     path('resources/upload/', api.views.ResourceUploadView.as_view(), name='resource-upload'),
+    path('resources/create/', api.views.ResourceCreate.as_view(), name='resource-create'),
 
     path('resources/dropbox-upload/', api.views.DropboxUpload.as_view(), name='dropbox-upload'),
     path('resources/signed-url/<uuid:pk>/', api.views.ResourceSignedUrl.as_view(), name='signed-resource-url'),

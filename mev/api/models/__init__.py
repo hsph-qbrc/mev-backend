@@ -12,3 +12,4 @@ from .public_dataset import PublicDataset
 from .feedback_message import FeedbackMessage
 from .globus import GlobusTokens, GlobusTask
 from .message import Message
+from .ecs_task import ECSTaskDefinition

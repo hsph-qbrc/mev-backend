@@ -44,12 +44,13 @@ class NextflowRunnerTester(BaseAPITestCase):
         op_dir = '/some/op/dir'
         repo_name = 'repo-name'
         git_hash = 'abc123'
+        mock_op_db_obj = mock.MagicMock()
 
         # check the expected calls are made when everything works
         mock_get_container_names.return_value = ['a','b']
         mock_check_image_name_validity.side_effect = ['final_a', 'final_b']
         mock_check_image_exists.return_value = True
-        nf_runner.prepare_operation(op_dir, repo_name, git_hash)
+        nf_runner.prepare_operation(mock_op_db_obj, op_dir, repo_name, git_hash)
         mock_check_image_name_validity.assert_has_calls([
             mock.call('a', repo_name, git_hash),
             mock.call('b', repo_name, git_hash)
@@ -68,8 +69,10 @@ class NextflowRunnerTester(BaseAPITestCase):
         mock_get_container_names.return_value = ['a','b']
         mock_check_image_name_validity.side_effect = ['final_a', 'final_b']
         mock_check_image_exists.side_effect = [True, False]
+        mock_op_db_obj = mock.MagicMock()
+
         with self.assertRaisesRegex(Exception, 'final_b'):
-            nf_runner.prepare_operation(op_dir, repo_name, git_hash)
+            nf_runner.prepare_operation(mock_op_db_obj, op_dir, repo_name, git_hash)
         mock_check_image_name_validity.assert_has_calls([
             mock.call('a', repo_name, git_hash),
             mock.call('b', repo_name, git_hash)
@@ -364,7 +367,7 @@ class AWSBatchNextflowRunnerTester(BaseAPITestCase):
 
     @override_settings(AWS_BATCH_QUEUE='my-queue')
     @override_settings(AWS_REGION='us-east-2')
-    @override_settings(NEXTFLOW_BUCKET_NAME='my-nextflow-bucket')
+    @override_settings(JOB_BUCKET_NAME='my-job-bucket')
     def test_creates_config(self):
         nf_runner = AWSBatchNextflowRunner()
         p = nf_runner._prepare_config_template('/tmp')
@@ -385,7 +388,7 @@ class AWSBatchNextflowRunnerTester(BaseAPITestCase):
         aws.batch.cliPath = '/opt/aws-cli/bin/aws'
 
         //Additionally if we want to use S3 to hold intermediate files we can specify the work directory
-        workDir = 's3://my-nextflow-bucket/tmp'
+        workDir = 's3://my-job-bucket/tmp'
 
         docker.enabled = true
         """

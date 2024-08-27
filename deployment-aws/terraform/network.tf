@@ -6,6 +6,9 @@ resource "aws_vpc" "main" {
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
+  tags = {
+    Name = "${local.common_tags.Name}-ig"
+  }
 }
 
 resource "aws_route_table" "public" {
@@ -18,7 +21,11 @@ resource "aws_route_table" "public" {
     ipv6_cidr_block = "::/0"
     gateway_id      = aws_internet_gateway.main.id
   }
+  tags = {
+    Name = "${local.common_tags.Name}-public-rt"
+  }
 }
+
 
 resource "aws_subnet" "public" {
   vpc_id                          = aws_vpc.main.id
@@ -147,6 +154,21 @@ resource "aws_security_group" "api_server" {
     from_port        = 0
     to_port          = 0
     protocol         = "all"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+}
+
+# The security group associated with the ephemerial ECS instances.
+resource "aws_security_group" "ecs_instance_security_group" {
+  name        = "${local.common_tags.Name}-ecs-sg"
+  description = "Allow everything out, nothing in"
+  vpc_id      = aws_vpc.main.id
+  egress {
+    description      = "Allow all egress"
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }

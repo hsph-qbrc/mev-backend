@@ -3,11 +3,10 @@ import json
 import datetime
 import logging
 
-from jinja2 import Template
-
 from django.conf import settings
 
-from api.runners.base import OperationRunner
+from api.runners.base import OperationRunner, \
+    TemplatedCommandMixin
 from api.utilities.docker import check_if_container_running, \
     check_container_exit_code, \
     get_finish_datetime, \
@@ -22,7 +21,7 @@ from api.models import ExecutedOperation
 logger = logging.getLogger(__name__)
 
 
-class LocalDockerRunner(OperationRunner):
+class LocalDockerRunner(OperationRunner, TemplatedCommandMixin):
     '''
     Class that handles execution of `Operation`s using Docker on the local
     machine
@@ -149,7 +148,7 @@ class LocalDockerRunner(OperationRunner):
         executed_op.save()
         return
 
-    def prepare_operation(self, operation_dir, repo_name, git_hash):
+    def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
         '''
         Prepares the Operation, including pulling the Docker container
 
@@ -162,32 +161,9 @@ class LocalDockerRunner(OperationRunner):
         image_url = get_image_name_and_tag(repo_name, git_hash)
         pull_image(image_url)
 
-    def _get_entrypoint_command(self, entrypoint_file_path, arg_dict):
-        '''
-        Takes the entrypoint command file (a template) and the input
-        args and returns a formatted string which will be used as the 
-        ENTRYPOINT command for the Docker container.
-        '''
-        # read the template command
-        entrypoint_cmd_template = Template(
-            open(entrypoint_file_path, 'r').read())
-        try:
-            entrypoint_cmd = entrypoint_cmd_template.render(arg_dict)
-            return entrypoint_cmd
-        except Exception as ex:
-            logger.error('An exception was raised when constructing the'
-                         ' entrypoint command from the templated string.'
-                         f' Exception was: {ex}')
-            raise Exception('Failed to construct command to execute'
-                            ' local Docker container. See logs.'
-                            )
-
     def run(self, executed_op, op, validated_inputs):
         logger.info('Running in local Docker mode.')
-        logger.info(f'Executed op type: {type(executed_op)}')
-        logger.info(f'Executed op ID: {executed_op.id}')
-        logger.info(f'Op data: {op.to_dict()}')
-        logger.info(f'Validated inputs: {validated_inputs}')
+        super().run(executed_op, op, validated_inputs)
 
         # the UUID identifying the execution of this operation:
         execution_uuid = str(executed_op.id)
@@ -218,13 +194,6 @@ class LocalDockerRunner(OperationRunner):
 
         # Construct the command that will be run in the container:
         entrypoint_file_path = os.path.join(op_dir, self.ENTRYPOINT_FILE)
-        if not os.path.exists(entrypoint_file_path):
-            logger.error('Could not find the required entrypoint'
-                f' file at {entrypoint_file_path}.'
-                ' Something must have corrupted the operation directory.')
-            raise Exception('The repository must have been corrupted.'
-                            ' Failed to find the entrypoint file.'
-                            f' Check dir at: {op_dir}')
         entrypoint_cmd = self._get_entrypoint_command(
             entrypoint_file_path, arg_dict)
 

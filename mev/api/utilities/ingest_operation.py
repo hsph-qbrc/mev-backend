@@ -191,7 +191,7 @@ def handle_operation_specific_resources(op, staging_dir, op_uuid):
                                   ' you must first create the logic.')
 
 
-def prepare_operation(op_data, staging_dir, repo_name, git_hash):
+def prepare_operation(op_data, operation_db_obj, staging_dir, repo_name, git_hash):
     '''
     This function calls out to the runner to have it prepare the necessary
     elements to run the Operation.
@@ -202,7 +202,7 @@ def prepare_operation(op_data, staging_dir, repo_name, git_hash):
     run_mode = op_data['mode']
     runner_class = get_runner(run_mode)
     runner = runner_class()
-    runner.prepare_operation(staging_dir, repo_name, git_hash)
+    runner.prepare_operation(operation_db_obj, staging_dir, repo_name, git_hash)
 
 
 def check_for_repo(repository_url):
@@ -354,7 +354,8 @@ def ingest_dir(staging_dir, op_uuid, git_hash, repo_name, repository_url, overwr
     handle_operation_specific_resources(op, staging_dir, op_uuid)
 
     # prepare any elements required for running the operation:
-    prepare_operation(op_data, staging_dir, repo_name, git_hash)
+    op_db_obj = OperationDbModel.objects.get(id=op.id)
+    prepare_operation(op_data, op_db_obj, staging_dir, repo_name, git_hash)
 
     # save the operation in a final location:
     save_operation(op_data, staging_dir, overwrite)

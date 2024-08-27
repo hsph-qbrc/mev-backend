@@ -268,15 +268,26 @@ if not WEBMEV_DEPLOYMENT_PLATFORM in AVAILABLE_WEBMEV_DEPLOYMENT_PLATFORMS:
 if get_env('ENABLE_REMOTE_JOB_RUNNERS') == 'yes':
     ENABLE_REMOTE_JOBS = True
 
-    # ensure we have the proper variables to work with Nextflow
-    # TODO: clean these up with respect to cloud environments- generalize.
-    NEXTFLOW_BUCKET_NAME = get_env('NEXTFLOW_BUCKET_NAME')
+    JOB_BUCKET_NAME = get_env('JOB_BUCKET_NAME')
     AWS_BATCH_QUEUE = get_env('AWS_BATCH_QUEUE')
     AWS_REGION = get_env('AWS_REGION')
 
     # TODO: make these variable:
     NEXTFLOW_EXE = '/opt/nextflow'
     NEXTFLOW_STATUS_UPDATE_URL = 'http://127.0.0.1:8080/api/nextflow/status-update/'
+
+    # variables related to ECS-based runner:
+    AWS_ECS_CLUSTER = get_env('AWS_ECS_CLUSTER')
+    AWS_ECS_EXECUTION_ROLE = get_env('AWS_ECS_EXECUTION_ROLE')
+    AWS_ECS_SECURITY_GROUP = get_env('AWS_ECS_SECURITY_GROUP')
+    AWS_ECS_SUBNET = get_env('AWS_ECS_SUBNET')
+    AWS_ECS_TASK_ROLE = get_env('AWS_ECS_TASK_ROLE')
+    AWS_EFS_ACCESS_POINT = get_env('AWS_EFS_ACCESS_POINT')
+    AWS_EFS_ID = get_env('AWS_EFS_ID')
+    AWS_EFS_MOUNT = get_env('EFS_MOUNT')
+    AWS_LOG_GROUP = get_env('CLOUDWATCH_LOG_GROUP')
+    AWS_ECS_LOG_GROUP = get_env('AWS_ECS_LOG_GROUP')
+
 else:
     ENABLE_REMOTE_JOBS = False
 

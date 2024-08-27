@@ -56,7 +56,7 @@ class NextflowRunner(OperationRunner):
 
     JOB_PREFIX = 'job_'
 
-    def prepare_operation(self, operation_dir, repo_name, git_hash):
+    def prepare_operation(self, operation_db_obj, operation_dir, repo_name, git_hash):
 
         container_image_names = get_container_names(operation_dir)
         logger.info('Found the following image names among the'
@@ -115,10 +115,7 @@ class NextflowRunner(OperationRunner):
 
     def run(self, executed_op, op, validated_inputs):
         logger.info(f'Executing job using Nextflow runner.')
-        logger.info(f'Executed op type: {type(executed_op)}')
-        logger.info(f'Executed op ID: {executed_op.id}')
-        logger.info(f'Op data: {op.to_dict()}')
-        logger.info(f'Validated inputs: {validated_inputs}')
+        super().run(executed_op, op, validated_inputs)
 
         # the UUID identifying the execution of this operation:
         execution_uuid = str(executed_op.id)
@@ -322,7 +319,7 @@ class AWSBatchNextflowRunner(NextflowRunner):
             fout.write(template_text.format(
                 aws_batch_queue=settings.AWS_BATCH_QUEUE,
                 aws_region=settings.AWS_REGION,
-                nextflow_bucket_name=settings.NEXTFLOW_BUCKET_NAME,
+                nextflow_bucket_name=settings.JOB_BUCKET_NAME,
                 uuid=os.path.basename(execution_dir)
             ))
         return runtime_config_path
@@ -334,4 +331,4 @@ class AWSBatchNextflowRunner(NextflowRunner):
         associated with the job execution
         '''
         return S3_PREFIX + \
-            os.path.join(settings.NEXTFLOW_BUCKET_NAME, str(executed_op_pk))
+            os.path.join(settings.JOB_BUCKET_NAME, str(executed_op_pk))

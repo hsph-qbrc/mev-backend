@@ -15,6 +15,8 @@ from constants import JSON_FORMAT, \
 from exceptions import NonIterableContentsException, \
     ParseException
 
+from api.utilities.admin_utils import alert_admins
+
 from .base import DataResource
 
 logger = logging.getLogger(__name__)
@@ -292,3 +294,17 @@ class JsonResource(DataResource):
             if all(tests):
                 filtered_list.append(item)
         return filtered_list
+
+    def save_to_file(self, contents, file_handle):
+        '''
+        Write the table-like resource to `filepath`
+        '''
+        try:
+            file_handle.write(json.dumps(contents))
+
+        except Exception as ex:
+            err_msg = (f'Failed to write JSON resource.'
+                      f' Reason was {ex}.')
+            logger.error(err_msg)
+            alert_admins(err_msg)
+            raise ex

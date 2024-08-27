@@ -43,7 +43,8 @@ class RemoteCromwellRunnerTester(BaseAPITestCase):
         '''
         rcr = RemoteCromwellRunner()
         mock_op_dir = '/abc'
-        rcr.prepare_operation(mock_op_dir, 'my-repo', '')
+        mock_op_db_obj = mock.MagicMock()
+        rcr.prepare_operation(mock_op_db_obj, mock_op_dir, 'my-repo', '')
 
     @mock.patch('api.runners.remote_cromwell.alert_admins')
     def test_run_attempt_fails(self, mock_alert_admins):

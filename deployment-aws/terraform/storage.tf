@@ -2,8 +2,8 @@ resource "aws_s3_bucket" "api_storage_bucket" {
     bucket = "${local.stack}-webmev-storage"
 }
 
-resource "aws_s3_bucket" "nextflow_storage_bucket" {
-    bucket = "${local.stack}-nextflow-storage"
+resource "aws_s3_bucket" "job_storage_bucket" {
+    bucket = "${local.stack}-webmev-job-storage"
 }
 
 resource "aws_s3_bucket" "logging" {
@@ -33,8 +33,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "main_storage" {
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "nextflow_storage" {
-  bucket = aws_s3_bucket.nextflow_storage_bucket.bucket
+resource "aws_s3_bucket_server_side_encryption_configuration" "job_storage" {
+  bucket = aws_s3_bucket.job_storage_bucket.bucket
 
   rule {
     apply_server_side_encryption_by_default {

@@ -17,7 +17,8 @@ from constants import TSV_FORMAT,\
     BED6_FILE_KEY,\
     NARROWPEAK_FILE_KEY, \
     FASTA_KEY, \
-    FASTA_FORMAT
+    FASTA_FORMAT, \
+    FIRST_COLUMN_ID
 from resource_types import RESOURCE_MAPPING
 from resource_types.table_types import PREVIEW_NUM_LINES
 from api.models import Resource
@@ -86,7 +87,7 @@ class TestResourcePreviewEndpoint(BaseAPITestCase):
         df = pd.read_table(f, index_col=0, nrows=PREVIEW_NUM_LINES)
         expected_rownames = df.index.tolist()
 
-        returned_rownames = [x['rowname'] for x in j]
+        returned_rownames = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_rownames, expected_rownames)
 
         # test that we ignore params for the preview:
@@ -98,7 +99,7 @@ class TestResourcePreviewEndpoint(BaseAPITestCase):
             status.HTTP_200_OK)
         j = response.json()
         self.assertTrue(len(j) == PREVIEW_NUM_LINES)
-        returned_rownames = [x['rowname'] for x in j]
+        returned_rownames = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_rownames, expected_rownames)
 
     @mock.patch('api.views.resource_views.check_resource_request')
@@ -136,13 +137,13 @@ class TestResourcePreview(BaseAPITestCase):
         rows = ['geneA', 'geneB', 'geneC']
         values = np.arange(9).reshape((3,3))
         full_file_return = [
-            {'rowname': 'geneA', 'values': {'colA':0, 'colB':1, 'colC':2}},
-            {'rowname': 'geneB', 'values': {'colA':3, 'colB':4, 'colC':5}},
-            {'rowname': 'geneC', 'values': {'colA':6, 'colB':7, 'colC':8}}
+            {FIRST_COLUMN_ID: 'geneA', 'values': {'colA':0, 'colB':1, 'colC':2}},
+            {FIRST_COLUMN_ID: 'geneB', 'values': {'colA':3, 'colB':4, 'colC':5}},
+            {FIRST_COLUMN_ID: 'geneC', 'values': {'colA':6, 'colB':7, 'colC':8}}
         ]
         preview_return = [
-            {'rowname': 'geneA', 'values': {'colA':0, 'colB':1, 'colC':2}},
-            {'rowname': 'geneB', 'values': {'colA':3, 'colB':4, 'colC':5}},
+            {FIRST_COLUMN_ID: 'geneA', 'values': {'colA':0, 'colB':1, 'colC':2}},
+            {FIRST_COLUMN_ID: 'geneB', 'values': {'colA':3, 'colB':4, 'colC':5}},
         ]
         df = pd.DataFrame(values, index=rows, columns=columns)
         path = os.path.join('/tmp', 'test_preview_matrix.tsv')
@@ -204,17 +205,17 @@ class TestResourcePreview(BaseAPITestCase):
         contents = bed3_type.to_json(contents)
 
         full_file_return = [
-            {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200}},
-            {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340}},
-            {'rowname': 2, 'values': {'chrom':'chrX', 'start':100, 'stop':200}}
+            {FIRST_COLUMN_ID: 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200}},
+            {FIRST_COLUMN_ID: 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340}},
+            {FIRST_COLUMN_ID: 2, 'values': {'chrom':'chrX', 'start':100, 'stop':200}}
         ]
         self.assertCountEqual(contents, full_file_return)
         # with the preview arg, check that we only get two lines back:
         contents = bed3_type.get_contents(r, preview=True)
         contents = bed3_type.to_json(contents)
         preview_return = [
-            {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200}},
-            {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340}}
+            {FIRST_COLUMN_ID: 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200}},
+            {FIRST_COLUMN_ID: 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340}}
         ]
         self.assertCountEqual(contents, preview_return)
 
@@ -239,17 +240,17 @@ class TestResourcePreview(BaseAPITestCase):
         contents = bed6_type.get_contents(r)
         contents = bed6_type.to_json(contents)
         full_file_return = [
-            {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200, 'name':'gA', 'score': 100, 'strand': '.'}},
-            {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340, 'name':'gB', 'score': 100, 'strand': '.'}},
-            {'rowname': 2, 'values': {'chrom':'chrX', 'start':100, 'stop':200, 'name':'gC', 'score': 100, 'strand': '.'}}
+            {FIRST_COLUMN_ID: 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200, 'name':'gA', 'score': 100, 'strand': '.'}},
+            {FIRST_COLUMN_ID: 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340, 'name':'gB', 'score': 100, 'strand': '.'}},
+            {FIRST_COLUMN_ID: 2, 'values': {'chrom':'chrX', 'start':100, 'stop':200, 'name':'gC', 'score': 100, 'strand': '.'}}
         ]
         self.assertCountEqual(contents, full_file_return)
         # with the preview arg, check that we only get two lines back:
         contents = bed6_type.get_contents(r, preview=True)
         contents = bed6_type.to_json(contents)
         preview_return = [
-            {'rowname': 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200, 'name':'gA', 'score': 100, 'strand': '.'}},
-            {'rowname': 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340, 'name':'gB', 'score': 100, 'strand': '.'}}
+            {FIRST_COLUMN_ID: 0, 'values': {'chrom':'chr1', 'start':100, 'stop':200, 'name':'gA', 'score': 100, 'strand': '.'}},
+            {FIRST_COLUMN_ID: 1, 'values': {'chrom':'chr1', 'start':200, 'stop':340, 'name':'gB', 'score': 100, 'strand': '.'}}
         ]
         self.assertCountEqual(contents, preview_return)
 
@@ -275,7 +276,7 @@ class TestResourcePreview(BaseAPITestCase):
         contents = np_type.to_json(contents)
         full_file_return = [
             {
-                'rowname': 0, 
+                FIRST_COLUMN_ID: 0, 
                 'values': {
                     'chrom':'chr1', 
                     'start':100, 
@@ -290,7 +291,7 @@ class TestResourcePreview(BaseAPITestCase):
                 }
             },
             {
-                'rowname': 1, 
+                FIRST_COLUMN_ID: 1, 
                 'values': {
                     'chrom':'chr1', 
                     'start':200, 
@@ -305,7 +306,7 @@ class TestResourcePreview(BaseAPITestCase):
                 }
             },
             {
-                'rowname': 2, 
+                FIRST_COLUMN_ID: 2, 
                 'values': {
                     'chrom':'chrX', 
                     'start':100, 
@@ -326,7 +327,7 @@ class TestResourcePreview(BaseAPITestCase):
         contents = np_type.to_json(contents)
         preview_return = [
             {
-                'rowname': 0, 
+                FIRST_COLUMN_ID: 0, 
                 'values': {
                     'chrom':'chr1', 
                     'start':100, 
@@ -341,7 +342,7 @@ class TestResourcePreview(BaseAPITestCase):
                 }
             },
             {
-                'rowname': 1, 
+                FIRST_COLUMN_ID: 1, 
                 'values': {
                     'chrom':'chr1', 
                     'start':200, 

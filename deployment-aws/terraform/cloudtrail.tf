@@ -12,7 +12,7 @@ resource "aws_cloudtrail" "default" {
       type = "AWS::S3::Object"
       values = [
         "${aws_s3_bucket.api_storage_bucket.arn}/",
-        "${aws_s3_bucket.nextflow_storage_bucket.arn}/",
+        "${aws_s3_bucket.job_storage_bucket.arn}/",
       ]
     }
   }

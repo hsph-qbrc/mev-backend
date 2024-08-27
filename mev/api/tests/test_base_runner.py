@@ -3,6 +3,7 @@ import unittest.mock as mock
 import os
 import json
 import uuid
+from tempfile import NamedTemporaryFile
 
 from django.test import override_settings
 
@@ -11,7 +12,8 @@ from data_structures.operation import Operation
 from exceptions import OutputConversionException
 
 from api.tests.base import BaseAPITestCase
-from api.runners.base import OperationRunner
+from api.runners.base import OperationRunner, \
+    TemplatedCommandMixin
 from api.models import Resource
 from api.converters.basic_attributes import BooleanAsIntegerConverter
 
@@ -423,3 +425,28 @@ class BaseRunnerTester(BaseAPITestCase):
         mock_job_id = str(uuid.uuid4())
         runner._clean_following_success(mock_job_id)
         mock_rmtree.assert_called_with(f'/some/fake/dir/{mock_job_id}')
+
+
+class TemplatedCommandMixinTester(BaseAPITestCase):
+
+    def test_entrypoint_command_creation(self):
+        '''
+        Tests that we create the entrypoint command
+        from the template as expected
+        '''
+        input_path = '/home/xyz/input.tsv'
+        a_arg = 10
+        cmd = b'Rscript something.R {{input_file}} -a {{a_arg}}'
+        expected_cmd = 'Rscript something.R ' + \
+            input_path + ' -a ' + str(a_arg)
+        runner = TemplatedCommandMixin()
+        with NamedTemporaryFile() as tf:
+            tf.write(cmd)
+            tf.seek(0)
+            fname = tf.name
+            arg_dict = {
+                'a_arg': a_arg,
+                'input_file': input_path
+            }
+            final_cmd = runner._get_entrypoint_command(fname, arg_dict)
+            self.assertEqual(final_cmd, expected_cmd)
