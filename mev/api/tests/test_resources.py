@@ -3,6 +3,10 @@ import uuid
 import os
 import json
 import unittest.mock as mock
+from tempfile import NamedTemporaryFile
+
+import numpy as np
+import pandas as pd
 
 from django.urls import reverse
 from django.core.exceptions import ImproperlyConfigured
@@ -22,9 +26,14 @@ from constants import DATABASE_RESOURCE_TYPES, \
     JSON_FORMAT, \
     NARROWPEAK_FILE_KEY, \
     NEGATIVE_INF_MARKER, \
-    POSITIVE_INF_MARKER
-from resource_types.table_types import NarrowPeakFile
+    POSITIVE_INF_MARKER, \
+    FIRST_COLUMN_ID
 
+from resource_types.table_types import NarrowPeakFile, \
+    TableResource
+from resource_types.json_types import JsonResource
+from resource_types.sequence_types import FastAResource
+    
 from api.tests.base import BaseAPITestCase
 from api.tests import test_settings
 from api.tests.test_helpers import associate_file_with_resource
@@ -330,7 +339,7 @@ class ResourceContentTests(BaseAPITestCase):
 
         expected_return = [
             {
-                "rowname": "gA",
+                FIRST_COLUMN_ID: "gA",
                 "values": {
                 "colA": 0,
                 "colB": 1,
@@ -338,7 +347,7 @@ class ResourceContentTests(BaseAPITestCase):
                 }
             },
             {
-                "rowname": "gB",
+                FIRST_COLUMN_ID: "gB",
                 "values": {
                 "colA": 10,
                 "colB": 11,
@@ -346,7 +355,7 @@ class ResourceContentTests(BaseAPITestCase):
                 }
             },
             {
-                "rowname": "gC",
+                FIRST_COLUMN_ID: "gC",
                 "values": {
                 "colA": 20,
                 "colB": 21,
@@ -723,8 +732,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == N)
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g0')
-        self.assertTrue(final_record['rowname'] == 'g154')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g0')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g154')
 
         # add the query params onto the end of the url:
         url = base_url + '?page=1'
@@ -738,8 +747,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == settings.REST_FRAMEWORK['PAGE_SIZE'])
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g0')
-        self.assertTrue(final_record['rowname'] == 'g49')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g0')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g49')
 
         # add the query params onto the end of the url:
         url = base_url + '?page=2'
@@ -753,8 +762,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == settings.REST_FRAMEWORK['PAGE_SIZE'])
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g50')
-        self.assertTrue(final_record['rowname'] == 'g99')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g50')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g99')
 
         # add the query params onto the end of the url:
         url = base_url + '?page=last'
@@ -769,8 +778,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == leftover_size)
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g150')
-        self.assertTrue(final_record['rowname'] == 'g154')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g150')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g154')
 
         # by itself the page_size param doesn't do anything.
         # It needs the page param
@@ -786,8 +795,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == N)
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g0')
-        self.assertTrue(final_record['rowname'] == 'g154')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g0')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g154')
 
         # test the page_size param:
         page_size = 20
@@ -803,8 +812,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == page_size)
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g20')
-        self.assertTrue(final_record['rowname'] == 'g39')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g20')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g39')
 
     @mock.patch('api.views.resource_views.check_resource_request')
     def test_resource_contents_rowname_filter(self, mock_check_resource_request):
@@ -835,8 +844,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == N)
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g0')
-        self.assertTrue(final_record['rowname'] == 'g154')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g0')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g154')
 
         # the "genes" are named like g0, g1, ...
         # try some row name filters:
@@ -906,7 +915,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         j = response.json()
         self.assertTrue(len(j) == 1)
-        self.assertTrue(j[0]['rowname'] == 'g1')
+        self.assertTrue(j[0][FIRST_COLUMN_ID] == 'g1')
 
         # add on some pagination queries
         # the "startswith" G1 filter should 66 entries in total
@@ -923,7 +932,7 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == 10)
         idx = [1, *list(range(10,19))]
         expected_rows = ['g%d' % x for x in idx]
-        self.assertCountEqual(expected_rows, [x['rowname'] for x in results]) 
+        self.assertCountEqual(expected_rows, [x[FIRST_COLUMN_ID] for x in results]) 
 
         # get page 2 on the size 66 query. Should be g19, g100, ..., g108
         pg_size = 10
@@ -939,7 +948,7 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == 10)
         idx = [19, *list(range(100,109))]
         expected_rows = ['g%d' % x for x in idx]
-        self.assertCountEqual(expected_rows, [x['rowname'] for x in results]) 
+        self.assertCountEqual(expected_rows, [x[FIRST_COLUMN_ID] for x in results]) 
 
         # check the "in" query. We use this for selecting a subset of a matrix for genes of interest
         # such as when getting the data for a specific FeatureSet
@@ -953,7 +962,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         j = response.json()
         self.assertTrue(len(j) == 3)
-        returned_genes = [x['rowname'] for x in j]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_genes, selected_genes)
 
         # check that duplicate gene requests are 'ignored'
@@ -967,7 +976,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         j = response.json()
         self.assertTrue(len(j) == 3)
-        returned_genes = [x['rowname'] for x in j]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_genes, list(set(selected_genes)))
 
         # check the "in" query. We use this for selecting a subset of a matrix for genes of interest
@@ -982,7 +991,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         j = response.json()
         self.assertTrue(len(j) == 2)
-        returned_genes = [x['rowname'] for x in j]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_genes, selected_genes[:2])
 
         # check the "in" query. We use this for selecting a subset of a matrix for genes of interest
@@ -998,7 +1007,7 @@ class ResourceContentTests(BaseAPITestCase):
         j = response.json()
         results = j['results']
         self.assertTrue(len(results) == 10)
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         expected_genes = selected_genes[:10]
         self.assertCountEqual(returned_genes, expected_genes)
 
@@ -1050,7 +1059,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         j = response.json()
         self.assertTrue(len(j) == 2)
-        returned_genes = [x['rowname'] for x in j]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_genes, selected_genes[:2])
 
     @mock.patch('api.views.resource_views.check_resource_request')
@@ -1082,8 +1091,8 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertTrue(len(results) == N)
         first_record = results[0]
         final_record = results[-1]
-        self.assertTrue(first_record['rowname'] == 'g0')
-        self.assertTrue(final_record['rowname'] == 'g154')
+        self.assertTrue(first_record[FIRST_COLUMN_ID] == 'g0')
+        self.assertTrue(final_record[FIRST_COLUMN_ID] == 'g154')
 
         # the columns are named S1 through S6 
         # try some column name filters:
@@ -1160,7 +1169,7 @@ class ResourceContentTests(BaseAPITestCase):
         j = response.json()
         print(json.dumps(j, indent=2))
         self.assertTrue(len(j) == 2)
-        returned_genes = [x['rowname'] for x in j]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in j]
         self.assertCountEqual(returned_genes, selected_genes)
                 
         first_record = j[0]
@@ -1202,7 +1211,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 2)
-        returned_set = set([x['rowname'] for x in results])
+        returned_set = set([x[FIRST_COLUMN_ID] for x in results])
         self.assertEqual({'HNRNPUL2', 'MAP1A'}, returned_set)
 
         # an empty result set
@@ -1225,7 +1234,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 1)
-        returned_set = set([x['rowname'] for x in results])
+        returned_set = set([x[FIRST_COLUMN_ID] for x in results])
         self.assertEqual({'HNRNPUL2'}, returned_set)
 
         # note the missing delimiter, which makes the suffix invalid. Should return 400
@@ -1318,7 +1327,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 5)
-        returned_set = set([x['rowname'] for x in results])
+        returned_set = set([x[FIRST_COLUMN_ID] for x in results])
         self.assertEqual({'KRT18P27', 'PWWP2AP1', 'AMBP', 'ADH5P2', 'MMGT1'}, returned_set)
 
         suffix = '?log2FoldChange=[absgt]:2.0&pvalue=[lt]:0.5'
@@ -1330,7 +1339,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 1)
-        returned_set = set([x['rowname'] for x in results])
+        returned_set = set([x[FIRST_COLUMN_ID] for x in results])
         self.assertEqual({'AMBP'}, returned_set)
 
 
@@ -1369,7 +1378,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 2)
-        returned_set = set([x['rowname'] for x in results])
+        returned_set = set([x[FIRST_COLUMN_ID] for x in results])
         self.assertEqual({'A', 'C'}, returned_set)
 
         suffix = '?colB=abc&colA=[lt]:0.02'
@@ -1381,7 +1390,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 1)
-        returned_set = set([x['rowname'] for x in results])
+        returned_set = set([x[FIRST_COLUMN_ID] for x in results])
         self.assertEqual({'A'}, returned_set)
 
         # filter which gives zero results
@@ -1433,7 +1442,7 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertEqual(response.status_code, 
             status.HTTP_200_OK)
         results = response.json()
-        gene_ordering = [x['rowname'] for x in results]
+        gene_ordering = [x[FIRST_COLUMN_ID] for x in results]
         expected_ordering = [
             'AC011841.4', 
             'UNCX', 
@@ -1472,7 +1481,7 @@ class ResourceContentTests(BaseAPITestCase):
         self.assertEqual(response.status_code, 
             status.HTTP_200_OK)
         results = response.json()
-        gene_ordering = [x['rowname'] for x in results]
+        gene_ordering = [x[FIRST_COLUMN_ID] for x in results]
         # the first few are unambiguous, as the padj are different
         # the later ones have the same padj, but different log2FoldChange
         # We include some +/-inf values also.
@@ -1518,7 +1527,7 @@ class ResourceContentTests(BaseAPITestCase):
         j = response.json()
         results = j['results']
         self.assertTrue(len(results) == 10)
-        gene_ordering = [x['rowname'] for x in results]
+        gene_ordering = [x[FIRST_COLUMN_ID] for x in results]
         # the first few are unambiguous, as the padj are different
         # the later ones have the same padj, but different log2FoldChange
         # We include some +/-inf values also.
@@ -1591,7 +1600,7 @@ class ResourceContentTests(BaseAPITestCase):
         results = response.json()
         self.assertTrue(all(['__rowmean__' in x for x in results]))
         expected_gene_ordering = ['g%d' % x for x in range(12,0,-1)]
-        returned_order = [x['rowname'] for x in results]
+        returned_order = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_gene_ordering, returned_order)
 
         # need to request the rowmean if a sort is requested. Otherwise the request
@@ -1637,7 +1646,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         expected_genes = ['g1', 'g2']
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # add on a rowmeans query to limit the results
@@ -1682,7 +1691,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         expected_genes = ['g%d' % i for i in range(3,13)]
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # check that it works with pagination
@@ -1709,7 +1718,7 @@ class ResourceContentTests(BaseAPITestCase):
         results = payload['results']
         self.assertTrue(len(results) == 10)
         expected_genes = ['g%d' % i for i in range(2,12)]
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # check that it works with pagination
@@ -1724,7 +1733,7 @@ class ResourceContentTests(BaseAPITestCase):
         results = response.json()['results']
         self.assertTrue(len(results) == 1)
         expected_gene = 'g12'
-        returned_gene = results[0]['rowname']
+        returned_gene = results[0][FIRST_COLUMN_ID]
         self.assertEqual(expected_gene, returned_gene)
 
         # check a malformed request-- there is no '&' delimiter
@@ -1788,7 +1797,7 @@ class ResourceContentTests(BaseAPITestCase):
         results = response.json()
         self.assertTrue(all(['__rowmean__' in x for x in results]))
         expected_gene_ordering = ['g%d' % x for x in [1, *range(12,1,-1)]]
-        returned_order = [x['rowname'] for x in results]
+        returned_order = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_gene_ordering, returned_order)
 
         # add on a rowmeans query with explicit true value.
@@ -1824,7 +1833,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         expected_genes = ['g2'] # in this test, 'g1' has an infinity
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # add on a rowmeans query to limit the results
@@ -1869,7 +1878,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         expected_genes = ['g%d' % i for i in [1, *range(3,13)]]
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # check that it works with pagination
@@ -1884,7 +1893,7 @@ class ResourceContentTests(BaseAPITestCase):
         results = response.json()['results']
         self.assertTrue(len(results) == 10)
         expected_genes = ['g%d' % i for i in range(1,11)]
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # check that it works with pagination
@@ -1899,7 +1908,7 @@ class ResourceContentTests(BaseAPITestCase):
         results = response.json()['results']
         self.assertTrue(len(results) == 2)
         expected_genes = ['g11','g12']
-        returned_genes = [x['rowname'] for x in results]
+        returned_genes = [x[FIRST_COLUMN_ID] for x in results]
         self.assertEqual(expected_genes, returned_genes)
 
         # check a malformed request-- there is no '&' delimiter
@@ -1955,7 +1964,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         self.assertTrue(len(results) == 2)
-        gene_ordering = [x['rowname'] for x in results]
+        gene_ordering = [x[FIRST_COLUMN_ID] for x in results]
         expected_ordering = [
             'AC011841.4', 
             'UNCX'
@@ -2102,7 +2111,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         expected_ordering = ['C', 'A', 'B']
-        self.assertEqual([x['rowname'] for x in results], expected_ordering)
+        self.assertEqual([x[FIRST_COLUMN_ID] for x in results], expected_ordering)
 
         suffix = '?{s}={a}:colB,{a}:colA'.format(
             s = settings.SORT_PARAM,
@@ -2116,7 +2125,7 @@ class ResourceContentTests(BaseAPITestCase):
             status.HTTP_200_OK)
         results = response.json()
         expected_ordering = ['A', 'C', 'B']
-        self.assertEqual([x['rowname'] for x in results], expected_ordering)
+        self.assertEqual([x[FIRST_COLUMN_ID] for x in results], expected_ordering)
 
     @mock.patch('api.views.resource_views.check_resource_request')
     def test_bed_like_files_return_contents_with_header(self, mock_check_resource_request):
@@ -2145,6 +2154,198 @@ class ResourceContentTests(BaseAPITestCase):
         results = response.json()
         col_headers = list(results[0]['values'].keys())
         self.assertCountEqual(col_headers, NarrowPeakFile.NAMES)
+
+
+class ResourceCreationFromContentTests(BaseAPITestCase):
+
+    def setUp(self):
+
+        self.establish_clients()
+        self.url = reverse('resource-create')
+        all_user_workspaces = Workspace.objects.filter(
+            owner=self.regular_user_1
+        )
+        self.user_workspace = all_user_workspaces[0]
+
+        self.content_data = [
+            {"__id__":"ABRF-ILMN-RNA-A-1", "condition":"UHR", "gender": "M"},
+            {"__id__":"ABRF-ILMN-RNA-A-2", "condition":"UHR", "gender": "M"},
+            {"__id__":"ABRF-ILMN-RNA-A-3", "condition":"UHR", "gender": "F"},
+            {"__id__":"ABRF-ILMN-RNA-A-4", "condition":"UHR", "gender": "F"},
+            {"__id__":"ABRF-ILMN-RNA-B-1", "condition":"HBR", "gender": "F"},
+            {"__id__":"ABRF-ILMN-RNA-B-2", "condition":"HBR", "gender": "F"},
+            {"__id__":"ABRF-ILMN-RNA-B-3", "condition":"HBR", "gender": "M"},
+            {"__id__":"ABRF-ILMN-RNA-B-4", "condition":"HBR", "gender": "M"}
+        ]
+
+    def test_file_writes(self):
+        '''
+        To permit file-writing via passing a data payload
+        from the frontend, methods are implemented in the various
+        resource type classes. This function tests those behave
+        as expected
+        '''
+        t = TableResource()
+        j = JsonResource()
+        fasta = FastAResource()
+        tmp_file = NamedTemporaryFile()
+
+        with open(tmp_file.name, 'w') as tf:
+            t.save_to_file(self.content_data, tf)
+
+        with open(tmp_file.name, 'w') as tf:
+            j.save_to_file(self.content_data, tf)
+
+        # check that we raise exceptions for file types that won't
+        # implement this feature:
+        with self.assertRaises(NotImplementedError):
+            with open(tmp_file.name, 'w') as tf:
+                fasta.save_to_file('>seq1', tf)
+
+    def test_file_write_fails(self):
+        '''
+        To permit file-writing via passing a data payload
+        from the frontend, methods are implemented in the various
+        resource type classes. This function tests that we handle
+        failures properly
+        '''
+        t = TableResource()
+        j = JsonResource()
+        tmp_file = NamedTemporaryFile()
+
+        # for the table-based data, we need an identifier column, which
+        # this does NOT have (it is named improperly)
+        bad_data = [
+            {"rowname":"ABRF-ILMN-RNA-A-1", "condition":"UHR", "gender": "M"},
+            {"rowname":"ABRF-ILMN-RNA-A-2", "condition":"UHR", "gender": "M"},
+            {"rowname":"ABRF-ILMN-RNA-A-3", "condition":"UHR", "gender": "F"},
+            {"rowname":"ABRF-ILMN-RNA-A-4", "condition":"UHR", "gender": "F"},
+            {"rowname":"ABRF-ILMN-RNA-B-1", "condition":"HBR", "gender": "F"},
+            {"rowname":"ABRF-ILMN-RNA-B-2", "condition":"HBR", "gender": "F"},
+            {"rowname":"ABRF-ILMN-RNA-B-3", "condition":"HBR", "gender": "M"},
+            {"rowname":"ABRF-ILMN-RNA-B-4", "condition":"HBR", "gender": "M"}
+        ]
+        with self.assertRaises(Exception):
+            with open(tmp_file.name, 'w') as tf:
+                t.save_to_file(bad_data, tf)
+
+        # dataframes are not natively JSON serializable, so
+        # they will trigger the write failure.
+        bad_json = pd.DataFrame(np.random.randint(0,10, size=(3,4)))
+        with self.assertRaises(Exception):
+            with open(tmp_file.name, 'w') as tf:
+                j.save_to_file(bad_json, tf)
+
+    def test_missing_key(self):
+        '''
+        Test that we catch an invalid request which lacks
+        all the required keys
+        '''
+        # leave out the resource_type key:
+        payload = {
+            'data': [],
+            'workspace': str(self.user_workspace.pk)
+        }
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bad_workspace_pk(self):
+        '''
+        Test that if either a non-existant UUID is passed OR
+        if the workspace UUID is owned by someone else.
+        '''
+        # a workspace PK that does not exist
+        payload = {
+            'data': [],
+            'workspace': str(uuid.uuid4()),
+            'resource_type': 'ANN'
+        }
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # another user's workspace- not allowed!
+        other_user_workspaces = Workspace.objects.filter(owner=self.regular_user_2)
+        payload = {
+            'data': [],
+            'workspace': str(other_user_workspaces[0].pk),
+            'resource_type': 'ANN'
+        }
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_invalid_resource_type(self):
+        '''
+        An invalid resource type is passed
+        '''
+        data = []
+        payload = {
+            'data': data,
+            'workspace': str(self.user_workspace.pk),
+            'resource_type': 'JUNK'
+        }
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_invalid_data(self):
+        '''
+        Test the proper things happen if invalid data
+        (here, an empty array) is passed
+        '''
+        payload = {
+            'data': [],
+            'workspace': str(self.user_workspace.pk),
+            'resource_type': 'ANN'
+        }
+        original_resources = [r.pk for r in Resource.objects.filter(owner=self.regular_user_1)]
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        final_resources = [r.pk for r in Resource.objects.filter(owner=self.regular_user_1)]
+        self.assertEqual(len(final_resources) - len(original_resources), 0)
+        self.assertTrue(response.status_code == status.HTTP_400_BAD_REQUEST)
+
+    def test_resource_creation(self):
+        '''
+        Test the proper things happen for a good request
+        '''
+        payload = {
+            'data': self.content_data,
+            'workspace': str(self.user_workspace.pk),
+            'resource_type': 'ANN'
+        }
+        original_resources = [r.pk for r in Resource.objects.filter(owner=self.regular_user_1)]
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        final_resources = [r.pk for r in Resource.objects.filter(owner=self.regular_user_1)]
+        self.assertEqual(len(final_resources) - len(original_resources), 1)
+        s = response.json()
+        r = Resource.objects.get(pk=s['pk'])
+        all_workspaces = r.workspaces.all()
+        self.assertTrue(len(all_workspaces) == 1)
+        w = all_workspaces[0]
+        self.assertTrue(w == self.user_workspace)
+
+    def test_resource_creation_fail_case1(self):
+        '''
+        Test that we respond properly if the data was not
+        acceptable for the resource type. Here, we
+        attempt to create an integer matrix, but the passed
+        data has a float
+        '''
+        data = [
+            {"__id__":"g0", "sA":1, "sB": 2},
+            {"__id__":"g1", "sA":1.1, "sB": 2}, # <-- float here fails it
+            {"__id__":"g2", "sA":1, "sB": 2}
+        ]
+        payload = {
+            'data': data,
+            'workspace': str(self.user_workspace.pk),
+            'resource_type': 'I_MTX'
+        }
+        original_resources = [r.pk for r in Resource.objects.filter(owner=self.regular_user_1)]
+        response = self.authenticated_regular_client.post(self.url, data=payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # check that no new resources were created (i.e. it was deleted)
+        final_resources = [r.pk for r in Resource.objects.filter(owner=self.regular_user_1)]
+        self.assertEqual(len(final_resources) - len(original_resources), 0)
 
 
 class ResourceDetailTests(BaseAPITestCase):

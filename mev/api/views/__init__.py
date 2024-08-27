@@ -15,7 +15,8 @@ from .resource_views import ResourceList, \
     ResourceContents, \
     ResourcePreview, \
     AddBucketResourceView, \
-    ResourceContentTransform
+    ResourceContentTransform, \
+    ResourceCreate
 from .resource_download import ResourceDownload, \
     ResourceSignedUrl
 from .operation_resource_views import OperationResourceList, \

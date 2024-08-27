@@ -78,3 +78,13 @@ class DataResource(object):
         '''
         return None
 
+    def save_to_file(self, contents, file_handle):
+        '''
+        This is a utility method that allows us to write to the 
+        file handle provided- the details are implemented in child classes.
+        
+        Note that this DOES NOT write/save into our database storage, etc.
+        No validation, etc. is performed. Just a dumb write.
+        '''
+        raise NotImplementedError('Need to implement this in your sub-class.')
+

@@ -15,7 +15,8 @@ from constants import MATRIX_KEY, \
     JSON_FILE_KEY, \
     JSON_FORMAT, \
     POSITIVE_MARKER, \
-    NEGATIVE_MARKER
+    NEGATIVE_MARKER, \
+    FIRST_COLUMN_ID
 
 from exceptions import ParseException
 
@@ -66,7 +67,7 @@ class ResourceTransformTests(BaseAPITestCase):
         df = resource_type_instance.get_contents(self.resource)
         result = perform_clustering(df, 'ward', 'euclidean', resource_type_instance)
         expected_row_ordering = ['g5','g1','g3','g6','g2','g4']
-        self.assertEqual(expected_row_ordering, [x['rowname'] for x in result])
+        self.assertEqual(expected_row_ordering, [x[FIRST_COLUMN_ID] for x in result])
         expected_col_ordering = ['s1','s3','s5','s2','s4','s6']
         self.assertEqual(expected_col_ordering, [x for x in result[0]['values']])
 
@@ -119,7 +120,7 @@ class ResourceTransformTests(BaseAPITestCase):
         df = resource_type_instance.table
         result = perform_clustering(df, 'ward', 'euclidean', resource_type_instance)
         self.assertTrue(len(result) == 1)
-        self.assertTrue(result[0]['rowname'] == 'g1')
+        self.assertTrue(result[0][FIRST_COLUMN_ID] == 'g1')
 
     @mock.patch('api.data_transformations.heatmap_transforms.perform_clustering')
     def test_heatmap_cluster_transform_case1(self, mock_perform_clustering):
@@ -227,7 +228,7 @@ class ResourceTransformTests(BaseAPITestCase):
         }
         result = heatmap_reduce(self.resource, query_params)
         expected_row_ordering = ['g3','g1','g2','g6','g4']
-        self.assertEqual(expected_row_ordering, [x['rowname'] for x in result])
+        self.assertEqual(expected_row_ordering, [x[FIRST_COLUMN_ID] for x in result])
         expected_col_ordering = ['s1','s3','s5','s2','s4','s6']
         self.assertEqual(expected_col_ordering, [x for x in result[0]['values']])
 
@@ -273,7 +274,7 @@ class ResourceTransformTests(BaseAPITestCase):
         }
         result = heatmap_reduce(self.resource, query_params)
         expected_row_ordering = ['g3','g1','g2','g6','g4']
-        self.assertEqual(expected_row_ordering, [x['rowname'] for x in result])
+        self.assertEqual(expected_row_ordering, [x[FIRST_COLUMN_ID] for x in result])
         expected_col_ordering = ['s1','s3','s5','s2','s4','s6']
         self.assertEqual(expected_col_ordering, [x for x in result[0]['values']])
 

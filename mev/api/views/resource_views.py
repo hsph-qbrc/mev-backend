@@ -1,6 +1,8 @@
 import logging
+import uuid
 
 from django.conf import settings
+from django.core.files import File
 from django.core.files.storage import default_storage
 from rest_framework import permissions as framework_permissions
 from rest_framework import generics
@@ -14,11 +16,14 @@ from exceptions import NonIterableContentsException, \
     NoResourceFoundException, \
     ParseException
 
-from api.models import Resource
+from api.models import Resource, Workspace
 from api.serializers.resource import ResourceSerializer
 import api.permissions as api_permissions
 from api.utilities.resource_utilities import resource_supports_pagination, \
-    check_resource_request_validity
+    check_resource_request_validity, \
+    create_resource, \
+    initiate_resource_validation, \
+    retrieve_resource_class_standard_format
 
 from resource_types import get_resource_type_instance
 from api.data_transformations import get_transformation_function
@@ -212,6 +217,65 @@ class ResourceContents(APIView):
             else:
                 contents = resource_type.to_json(contents)
                 return Response(contents)
+
+
+class ResourceCreate(APIView):
+
+    NOT_FOUND_MESSAGE = 'No workspace found by ID: {id}'
+
+    def post(self, request, *args, **kwargs):
+
+        logger.info(
+            f'POSTing to create a new Resource with data={request.data}')
+        try:
+            data = request.data['data']
+            workspace_pk = request.data['workspace']
+            resource_type = request.data['resource_type']
+        except KeyError as ex:
+            return Response({str(ex): f'You must supply this required key.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            resource_type_instance = get_resource_type_instance(resource_type)
+        except KeyError as ex:
+            return Response({str(ex): 'This resource type key is not valid.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            workspace = Workspace.objects.get(id=workspace_pk, owner=request.user)
+        except Workspace.DoesNotExist as ex:
+            return Response(
+                {'message': self.NOT_FOUND_MESSAGE.format(id=workspace_pk)}, 
+                status=status.HTTP_404_NOT_FOUND)
+
+        # now attempt to create the new file
+        tmp_name = str(uuid.uuid4())
+        tmp_path = f'{settings.TMP_DIR}/{tmp_name}'
+    
+        try:
+            with open(tmp_path, 'w') as f:
+                resource_type_instance.save_to_file(data, f)
+        except Exception as ex:
+            return Response(status = status.HTTP_400_BAD_REQUEST)
+
+        fh = File(open(tmp_path, 'rb'), tmp_name)
+        resource = create_resource(
+            request.user,
+            file_handle=fh,
+            name=tmp_name,
+            workspace=workspace
+        )
+        file_format = retrieve_resource_class_standard_format(resource_type)
+        initiate_resource_validation(resource, resource_type, file_format)
+        if resource.resource_type == resource_type:
+            return Response({'pk': resource.pk})
+        else:
+            logger.info('Resource type was not as expected- resource'
+                       f' {resource.pk} failed validation.')
+            resource.delete()
+            return Response(status = status.HTTP_400_BAD_REQUEST)
 
 
 class ResourcePreview(APIView):

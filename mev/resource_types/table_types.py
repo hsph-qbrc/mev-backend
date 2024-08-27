@@ -778,7 +778,7 @@ class TableResource(DataResource):
             We keep the original data separate by
             nesting inside a 'values' key.
             '''
-            return {'rowname': row.name, 'values': row.to_dict(OrderedDict)}
+            return {FIRST_COLUMN_ID: row.name, 'values': row.to_dict(OrderedDict)}
 
         def additional_row_converter(row):
             '''
@@ -786,7 +786,7 @@ class TableResource(DataResource):
             which are not part of the original data. Hence, those get added into
             their own fields, NOT part of the 'values' key.
             '''
-            d = {'rowname': row.name}
+            d = {FIRST_COLUMN_ID: row.name}
             d.update(row.to_dict(OrderedDict))
             return d
 
@@ -1027,6 +1027,22 @@ class TableResource(DataResource):
             self.table.to_csv(fh, sep='\t', index_label=FIRST_COLUMN_ID)
             resource_instance.write_to_file(fh, new_path)
 
+    def save_to_file(self, contents, file_handle):
+        '''
+        Write the table-like resource to `filepath` after
+        attempting to parse as a dataframe
+        '''
+        try:
+            df = pd.DataFrame(contents)
+            df.set_index(FIRST_COLUMN_ID, inplace=True)
+            df.to_csv(file_handle, sep='\t', index_label=FIRST_COLUMN_ID)
+        except Exception as ex:
+            err_msg = ('Failed to write table-like resource.'
+                      f' Reason was {ex}.')
+            logger.error(err_msg)
+            alert_admins(err_msg)
+            raise ex
+
 
 class Matrix(TableResource):
     '''
@@ -1047,7 +1063,7 @@ class Matrix(TableResource):
 
     EXAMPLE = [
         {
-            "rowname":"gene1",
+            FIRST_COLUMN_ID:"gene1",
             "values": {
                 "sampleA": 1.1,
                 "sampleB": 2.2,
@@ -1055,7 +1071,7 @@ class Matrix(TableResource):
             }
         },
         {
-            "rowname":"gene2",
+            FIRST_COLUMN_ID:"gene2",
             "values": {
                 "sampleA": 11.1,
                 "sampleB": 22.2,
@@ -1063,7 +1079,7 @@ class Matrix(TableResource):
             }
         },
         {
-            "rowname":"gene3",
+            FIRST_COLUMN_ID:"gene3",
             "values": {
                 "sampleA": 111.1,
                 "sampleB": 222.2,
@@ -1293,7 +1309,7 @@ class IntegerMatrix(Matrix):
 
     EXAMPLE = [
         {
-            "rowname":"gene1",
+            FIRST_COLUMN_ID:"gene1",
             "values": {
                 "sampleA": 1,
                 "sampleB": 2,
@@ -1301,7 +1317,7 @@ class IntegerMatrix(Matrix):
             }
         },
         {
-            "rowname":"gene2",
+            FIRST_COLUMN_ID:"gene2",
             "values": {
                 "sampleA": 11,
                 "sampleB": 22,
@@ -1309,7 +1325,7 @@ class IntegerMatrix(Matrix):
             }
         },
         {
-            "rowname":"gene3",
+            FIRST_COLUMN_ID:"gene3",
             "values": {
                 "sampleA": 111,
                 "sampleB": 222,
@@ -1402,7 +1418,7 @@ class Network(Matrix):
 
     EXAMPLE = [
         {
-            "rowname":"gene1",
+            FIRST_COLUMN_ID:"gene1",
             "values": {
                 "geneA": 1.1,
                 "geneB": 2.2,
@@ -1410,7 +1426,7 @@ class Network(Matrix):
             }
         },
         {
-            "rowname":"gene2",
+            FIRST_COLUMN_ID:"gene2",
             "values": {
                 "geneA": 11.1,
                 "geneB": 22.2,
@@ -1418,7 +1434,7 @@ class Network(Matrix):
             }
         },
         {
-            "rowname":"gene3",
+            FIRST_COLUMN_ID:"gene3",
             "values": {
                 "geneA": 111.1,
                 "geneB": 222.2,
@@ -1586,21 +1602,21 @@ class AnnotationTable(ElementTable):
 
     EXAMPLE = [
         {
-            "rowname":"SampleA",
+            FIRST_COLUMN_ID:"SampleA",
             "values": {
                 "cell_type": 'CD4',
                 "treatment": 'Y'
             }
         },
         {
-            "rowname":"SampleB",
+            FIRST_COLUMN_ID:"SampleB",
             "values": {
                 "cell_type": 'CD8',
                 "treatment": 'Y'
             }
         },
         {
-            "rowname":"SampleC",
+            FIRST_COLUMN_ID:"SampleC",
             "values": {
                 "cell_type": 'Monocyte',
                 "treatment": 'N'
@@ -1679,7 +1695,7 @@ class FeatureTable(ElementTable):
 
     EXAMPLE = [
         {
-            "rowname":"gene1",
+            FIRST_COLUMN_ID:"gene1",
             "values": {
                 "logFoldChange": 1.1,
                 "pvalue": 0.03,
@@ -1687,7 +1703,7 @@ class FeatureTable(ElementTable):
             }
         },
         {
-            "rowname":"gene2",
+            FIRST_COLUMN_ID:"gene2",
             "values": {
                 "logFoldChange": 2.2,
                 "pvalue": 0.01,
@@ -1695,7 +1711,7 @@ class FeatureTable(ElementTable):
             }
         },
         {
-            "rowname":"gene3",
+            FIRST_COLUMN_ID:"gene3",
             "values": {
                 "logFoldChange": 3.3,
                 "pvalue": 0.000003,
