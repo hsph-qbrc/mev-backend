@@ -106,6 +106,26 @@ resource "aws_iam_role_policy" "server_ecs_access" {
   )
 }
 
+# allows server to call lambda functions
+resource "aws_iam_role_policy" "server_lambda_access" {
+  name   = "AllowAccessToLambda"
+  role   = aws_iam_role.api_server_role.id
+  policy = jsonencode(
+    {
+      Version   = "2012-10-17",
+      Statement = [
+        {
+          Effect   = "Allow",
+          Action   = [
+            "lambda:InvokeFunction"
+          ],
+          Resource = [aws_lambda_function.resource_validation.arn]
+        }
+      ]
+    }
+  )
+}
+
 # when the api server registers a task, it needs to be able
 # to pass specific roles
 resource "aws_iam_role_policy" "server_ecs_passrole" {
