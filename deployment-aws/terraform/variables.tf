@@ -148,3 +148,8 @@ variable "storage_location" {
   type        = string
   default     = "remote"
 }
+
+variable "ecr_image" {
+  description = "Temporary for testing basic lambda function"
+  type        = string
+}
