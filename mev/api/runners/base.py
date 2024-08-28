@@ -15,7 +15,8 @@ from data_structures.data_resource_attributes import \
     get_all_data_resource_typenames
 
 from api.utilities.admin_utils import alert_admins
-from api.utilities.basic_utils import make_local_directory
+from api.utilities.basic_utils import make_local_directory, \
+    read_local_file
 from api.utilities.resource_utilities import delete_resource_by_pk
 from api.utilities.executed_op_utilities import get_execution_directory_path
 
@@ -265,8 +266,9 @@ class TemplatedCommandMixin(object):
             raise Exception(err_msg)
 
         # read the template command
-        entrypoint_cmd_template = Template(
-            open(entrypoint_file_path, 'r').read())
+        with read_local_file(entrypoint_file_path) as fin:
+            entrypoint_cmd_template = Template(fin.read())
+
         try:
             entrypoint_cmd = entrypoint_cmd_template.render(arg_dict)
             return entrypoint_cmd

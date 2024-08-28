@@ -130,12 +130,12 @@ class ResourceDownload(APIView):
             )
 
         if default_storage.exists(r.datafile.name):
-            contents = r.datafile.open('rb')
-            mime_type, _ = mimetypes.guess_type(r.datafile.name)
-            response = HttpResponse(content = contents)
-            response['Content-Type'] = mime_type
-            response['Content-Disposition'] = 'attachment; filename="%s"' % os.path.basename(r.name)
-            return response
+            with r.datafile.open('rb') as fin:
+                mime_type, _ = mimetypes.guess_type(r.datafile.name)
+                response = HttpResponse(content = fin)
+                response['Content-Type'] = mime_type
+                response['Content-Disposition'] = 'attachment; filename="%s"' % os.path.basename(r.name)
+                return response
         else:
             logger.error(f'Local storage was specified, but the resource at path {r.datafile.path}'
                 ' was not found.')

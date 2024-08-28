@@ -87,7 +87,8 @@ def subset_PANDA_net(resource_instance, query_params):
         init_nodes = None
 
     # Import file as pandas dataframe
-    df = pd.read_table(resource_instance.datafile.open(), header=0, index_col=0)
+    with resource_instance.datafile.open() as fin:
+        df = pd.read_table(fin, header=0, index_col=0)
 
     # Set initial variables
     initial_axis = axis
@@ -356,8 +357,10 @@ def get_result_matrices(executed_op_instance, weights_key, pvals_key):
     pvals_resource = check_resource_request_validity(
         executed_op_instance.owner, pvals_uuid)
 
-    weights_df = pd.read_table(weights_resource.datafile.open(), header=0, index_col=0)
-    pvals_df = pd.read_table(pvals_resource.datafile.open(), header=0, index_col=0)
+    with weights_resource.datafile.open() as fin:
+        weights_df = pd.read_table(fin, header=0, index_col=0)
+    with pvals_resource.datafile.open() as fin:
+        pvals_df = pd.read_table(fin, header=0, index_col=0)
 
     return weights_df, pvals_df
 

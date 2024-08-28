@@ -4,7 +4,7 @@ import json
 import logging
 import mimetypes
 
-from api.utilities.basic_utils import run_shell_command
+from api.utilities.basic_utils import read_local_file
 from api.public_data.indexers.base import BaseIndexer
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,8 @@ class SolrIndexer(BaseIndexer):
             m = content_type
         ))
 
-        data = open(filepath, 'r').read()
+        with read_local_file(filepath) as fin:
+            data = fin.read()
 
         headers = {'content-type': content_type}
         params = {'commit': 'true'}

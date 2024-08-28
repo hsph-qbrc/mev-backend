@@ -13,6 +13,7 @@ from api.utilities.resource_utilities import get_resource_by_pk, \
     delete_resource_by_pk, \
     retrieve_resource_class_standard_format, \
     create_resource
+from api.utilities.basic_utils import read_local_file
 from api.utilities.admin_utils import alert_admins
 from api.storage import S3_PREFIX
 from api.converters.mixins import CsvMixin, SpaceDelimMixin
@@ -347,7 +348,8 @@ class LocalResourceMixin(object):
                         n=name
                     )
                     )
-        fh = File(open(path, 'rb'), name)
+        with read_local_file(path, mode='rb') as fin:
+            fh = File(fin, name)
         return create_resource(
             executed_op.owner,
             file_handle=fh,

@@ -20,7 +20,8 @@ from api.utilities.nextflow_utils import NF_SUFFIX, \
 from api.utilities.docker import check_image_exists, \
     check_image_name_validity
 from api.utilities.basic_utils import copy_local_resource, \
-    run_shell_command
+    run_shell_command, \
+    read_local_file
 from api.models import ExecutedOperation
 from api.utilities.admin_utils import alert_admins
 from api.utilities.executed_op_utilities import get_execution_directory_path
@@ -285,7 +286,8 @@ class LocalNextflowRunner(NextflowRunner):
     OUTPUT_DIR_NAME = 'nf_outputs'
 
     def _prepare_config_template(self, execution_dir):
-        template_text = open(self.CONFIG_FILE_TEMPLATE, 'r').read()
+        with read_local_file(self.CONFIG_FILE_TEMPLATE) as fin:
+            template_text = fin.read()
         runtime_config_path = os.path.join(execution_dir, self.CONFIG_FILE_NAME)
         with open(runtime_config_path, 'w') as fout:
             fout.write(template_text.format(
@@ -313,7 +315,8 @@ class AWSBatchNextflowRunner(NextflowRunner):
                                         'aws_batch.config')
 
     def _prepare_config_template(self, execution_dir):
-        template_text = open(self.CONFIG_FILE_TEMPLATE, 'r').read()
+        with read_local_file(self.CONFIG_FILE_TEMPLATE) as fin:
+            template_text = fin.read()
         runtime_config_path = os.path.join(execution_dir, self.CONFIG_FILE_NAME)
         with open(runtime_config_path, 'w') as fout:
             fout.write(template_text.format(

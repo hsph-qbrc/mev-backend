@@ -47,8 +47,10 @@ class Command(BaseCommand):
         # Email addresses for all the active users in our database
         emails = [x.email for x in CustomUser.objects.filter(is_active=True)]
 
-        text_content = open(options['message']).read()
-        html_content = open(options['html']).read()
+        with open(options['message'], 'r') as fin:
+            text_content = fin.read()
+        with open(options['html'], 'r') as fin:
+            html_content = fin.read()
 
         # Due to limits in the number of requests, we need to be careful of our rate.
         # Also, since this is a broadcast email, we can't put multiple people in the TO

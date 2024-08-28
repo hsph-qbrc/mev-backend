@@ -20,6 +20,7 @@ from api.storage import S3_PREFIX
 from api.utilities.docker import check_image_exists, \
     get_image_name_and_tag
 from api.utilities.admin_utils import alert_admins
+from api.utilities.basic_utils import read_local_file
 from api.utilities.executed_op_utilities import get_execution_directory_path
 from exceptions import JobSubmissionException
 
@@ -239,7 +240,7 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         # the task steps
         container_defs.append(self._get_file_pull_container_definition())
 
-        with open(os.path.join(op_dir, ECSRunner.RESOURCE_FILE)) as fh:
+        with read_local_file(os.path.join(op_dir, ECSRunner.RESOURCE_FILE)) as fh:
             resource_dict = self._get_resource_requirements(fh)
 
         self._verify_task_requirements(resource_dict)
@@ -723,4 +724,6 @@ class ECSRunner(OperationRunner, TemplatedCommandMixin):
         dest_path = f'{get_execution_directory_path(exec_op_uuid)}/{self.OUTPUTS_JSON}'
         s3 = boto3.client('s3')
         s3.download_file(settings.JOB_BUCKET_NAME, outputs_path, dest_path)
-        return json.load(open(dest_path))
+        with read_local_file(dest_path) as fin:
+            j = json.load(fin)
+        return j

@@ -194,7 +194,7 @@ def delete_local_file(path):
             'Could not delete the file at {path}'.format(path=path))
         raise ex
 
-def read_local_file(filepath):
+def read_local_file(filepath, mode='r'):
     '''
     Reads a local file, returning a file handle.
 
@@ -205,7 +205,7 @@ def read_local_file(filepath):
         logger.info('Read file at {path}'.format(
             path=filepath
         ))
-        return open(filepath, 'r')
+        return open(filepath, mode)
     except Exception as ex:
         logger.error('Could not read file at {path}. Exception was {ex}'.format(
             path = filepath,

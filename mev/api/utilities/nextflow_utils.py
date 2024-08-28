@@ -5,7 +5,7 @@ import json
 import logging
 
 from api.utilities.executed_op_utilities import get_execution_directory_path
-
+from api.utilities.basic_utils import read_local_file
 
 NF_SUFFIX = '.nf'
 
@@ -76,7 +76,8 @@ def get_nextflow_file_contents(operation_dir):
     nf_files = glob.glob(os.path.join(operation_dir, '*' + NF_SUFFIX))
     contents = {}
     for nf_file in nf_files:
-        contents[os.path.basename(nf_file)] = open(nf_file, 'r').read()
+        with read_local_file(nf_file) as fin:
+            contents[os.path.basename(nf_file)] = fin.read()
     return contents
 
 
@@ -134,12 +135,9 @@ def read_final_nextflow_metadata(executed_operation_pk):
     execution
     '''
     executed_op_dir = get_execution_directory_path(executed_operation_pk)
-    return json.loads(
-        open(
-            os.path.join(executed_op_dir, FINAL_METADATA_FILENAME),
-            'r'
-        ).read()
-    )
+    with read_local_file(
+            os.path.join(executed_op_dir, FINAL_METADATA_FILENAME)) as fin:
+        return json.loads(fin.read())
 
 
 def job_succeeded(job_metadata):

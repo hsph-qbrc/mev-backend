@@ -307,9 +307,9 @@ class TableResource(DataResource):
                 else:
                     nrows = None
 
-                self.table = reader(
-                    resource_instance.datafile.open(),
-                    index_col=0, comment='#', nrows=nrows)
+                with resource_instance.datafile.open() as fin:
+                    self.table = reader(fin,
+                                        index_col=0, comment='#', nrows=nrows)
 
                 # drop extra/empty cols and rows
                 self.table.dropna(axis=0, how='all', inplace=True)
@@ -1771,10 +1771,11 @@ class BaseBEDFile(TableResource):
         # that into the columns and the 2nd and 3rd columns will no longer have
         # the proper integer type.
         try:
-            self.table = reader(resource_instance.datafile.open(), 
-                names=names,
-                usecols=column_numbers,
-                nrows=nrows)
+            with resource_instance.datafile.open() as fin:
+                self.table = reader(fin, 
+                    names=names,
+                    usecols=column_numbers,
+                    nrows=nrows)
         except pd.errors.ParserError as ex:
             logger.info(f'Failed to parse. Exception: {ex}')
             raise ex

@@ -24,7 +24,7 @@ from api.utilities.resource_utilities import resource_supports_pagination, \
     create_resource, \
     initiate_resource_validation, \
     retrieve_resource_class_standard_format
-
+from api.utilities.basic_utils import read_local_file
 from resource_types import get_resource_type_instance
 from api.data_transformations import get_transformation_function
 from api.async_tasks.async_resource_tasks import \
@@ -260,13 +260,14 @@ class ResourceCreate(APIView):
         except Exception as ex:
             return Response(status = status.HTTP_400_BAD_REQUEST)
 
-        fh = File(open(tmp_path, 'rb'), tmp_name)
-        resource = create_resource(
-            request.user,
-            file_handle=fh,
-            name=tmp_name,
-            workspace=workspace
-        )
+        with read_local_file(tmp_path, 'rb') as fin:
+            fh = File(fin, tmp_name)
+            resource = create_resource(
+                request.user,
+                file_handle=fh,
+                name=tmp_name,
+                workspace=workspace
+            )
         file_format = retrieve_resource_class_standard_format(resource_type)
         initiate_resource_validation(resource, resource_type, file_format)
         if resource.resource_type == resource_type:

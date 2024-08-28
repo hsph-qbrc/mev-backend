@@ -124,7 +124,8 @@ class JsonResource(DataResource):
         try:
             logger.info('Using python-native JSON loader to read'
                 f' resource: {resource_instance.pk}')
-            j = json.load(resource_instance.datafile.open())
+            with resource_instance.datafile.open() as fin:
+                j = json.load(fin)
             logger.info(f'Successfully parsed {resource_instance.pk} as JSON.')
             return (True, None)
         except json.decoder.JSONDecodeError as ex:
@@ -162,7 +163,8 @@ class JsonResource(DataResource):
         try:
             logger.info('Using python-native JSON loader to'
                 f' read resource: {resource_instance.pk}')
-            j = json.load(resource_instance.datafile.open())
+            with resource_instance.datafile.open() as fin:
+                j = json.load(fin)
             if filtering_query_params:
                 j = self.filter_based_on_query_params(j, filtering_query_params)
             if settings.SORT_PARAM in query_params:

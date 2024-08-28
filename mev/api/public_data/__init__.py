@@ -7,7 +7,8 @@ from django.core.files import File
 from api.models import PublicDataset, Resource
 from api.async_tasks.async_resource_tasks import validate_resource
 from api.utilities.resource_utilities import create_resource
-from api.utilities.basic_utils import delete_local_file
+from api.utilities.basic_utils import delete_local_file, \
+    read_local_file
 from .sources.gdc.tcga import TCGARnaSeqDataSource, \
     TCGAMicroRnaSeqDataSource, \
     TCGAMethylationDataSource
@@ -172,15 +173,16 @@ def create_dataset_from_params(dataset_id, user, request_payload, output_name = 
     # create the Resource instances.
     for path, name, resource_type, file_format in \
             zip(path_list, name_list, resource_type_list, file_format_list):
-        fh = File(open(path, 'rb'), name)
-        r = create_resource(
-            user,
-            file_handle=fh,
-            name=name,
-            resource_type=resource_type,
-            file_format=file_format,
-            status=Resource.VALIDATING
-        )
+        with read_local_file(path, mode='rb') as fin:
+            fh = File(fin, name)
+            r = create_resource(
+                user,
+                file_handle=fh,
+                name=name,
+                resource_type=resource_type,
+                file_format=file_format,
+                status=Resource.VALIDATING
+            )
 
         # although we have full control over the creation of files here,
         # running it through this function ensures that it is properly

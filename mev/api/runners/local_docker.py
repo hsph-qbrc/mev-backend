@@ -14,7 +14,8 @@ from api.utilities.docker import check_if_container_running, \
     get_logs, \
     pull_image, \
     get_image_name_and_tag
-from api.utilities.basic_utils import run_shell_command
+from api.utilities.basic_utils import run_shell_command, \
+    read_local_file
 from api.utilities.admin_utils import alert_admins
 from api.models import ExecutedOperation
 
@@ -66,9 +67,8 @@ class LocalDockerRunner(OperationRunner, TemplatedCommandMixin):
             settings.OPERATION_EXECUTION_DIR, job_id)
 
         try:
-            outputs_dict = json.load(open(
-                os.path.join(execution_dir, self.OUTPUTS_JSON)
-            ))
+            with read_local_file(os.path.join(execution_dir, self.OUTPUTS_JSON)) as fin:
+                outputs_dict = json.load(fin)
             logger.info('After parsing the outputs file,'
                         f' we have: {json.dumps(outputs_dict)}')
             return outputs_dict
