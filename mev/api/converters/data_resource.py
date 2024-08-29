@@ -350,12 +350,12 @@ class LocalResourceMixin(object):
                     )
         with read_local_file(path, mode='rb') as fin:
             fh = File(fin, name)
-        return create_resource(
-            executed_op.owner,
-            file_handle=fh,
-            name=name,
-            workspace=workspace
-        )
+            return create_resource(
+                executed_op.owner,
+                file_handle=fh,
+                name=name,
+                workspace=workspace
+            )
 
 
 class RemoteResourceMixin(object):
