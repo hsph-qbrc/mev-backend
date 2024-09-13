@@ -11,7 +11,9 @@ from api.utilities.basic_utils import delete_local_file, \
     read_local_file
 from .sources.gdc.tcga import TCGARnaSeqDataSource, \
     TCGAMicroRnaSeqDataSource, \
-    TCGAMethylationDataSource
+    TCGAMethylationDataSource, \
+    TCGAPromoterMethylationDataSource, \
+    TCGABodyMethylationDataSource
 from .sources.gdc.target import TargetRnaSeqDataSource
 from .sources.gtex_rnaseq import GtexRnaseqDataSource
 from .indexers import get_indexer
@@ -31,7 +33,9 @@ IMPLEMENTING_CLASSES = [
     TargetRnaSeqDataSource,
     GtexRnaseqDataSource,
     TCGAMicroRnaSeqDataSource,
-    TCGAMethylationDataSource
+    TCGAMethylationDataSource,
+    TCGABodyMethylationDataSource,
+    TCGAPromoterMethylationDataSource
 ]
 
 DATASET_MAPPING = {x.TAG:x for x in IMPLEMENTING_CLASSES}

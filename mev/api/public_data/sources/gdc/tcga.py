@@ -1,6 +1,5 @@
 import json
 import logging
-import requests
 import datetime
 import shutil
 import os
@@ -15,7 +14,8 @@ from api.utilities.basic_utils import get_with_retry, \
     make_local_directory
 from .gdc import GDCDataSource, \
     GDCRnaSeqDataSourceMixin, \
-    GDCMethylationDataSourceMixin
+    GDCMethylationDataSourceMixin, \
+    GDCMethylationAggregationMixin
 
 logger = logging.getLogger(__name__)
 
@@ -449,3 +449,109 @@ class TCGAMethylationDataSource(TCGADataSource, GDCMethylationDataSourceMixin):
         # uses the get_additional_metadata method of TCGADataSource
         # per python's MRO
         return super().get_additional_metadata()
+
+
+
+class TCGAPromoterMethylationDataSource(TCGAMethylationDataSource, GDCMethylationAggregationMixin):
+    '''
+    A specific implementation of the TCGA data source specific to
+    methylation data. This class performs an aggregation of probe-level
+    beta values into gene-level values.
+    '''
+
+    # A short name (string) which can be used as a "title" for the dataset
+    PUBLIC_NAME = 'TCGA Methylation (Gene promoters)'
+
+    # A longer, more descriptive text explaining the datasource:
+    DESCRIPTION = ('TCGA methylation data as processed by the'
+        ' Genomic Data Commons'
+        ' <a href="https://docs.gdc.cancer.gov/Data/Bioinformatics_Pipelines/Methylation_Pipeline/">'
+        ' methylation array harmonization workflow</a>. Methylation "beta" values for CpG sites are'
+        ' produced by SeSAMe software. Following this, gene-level methylation values are found'
+        ' by calculating the mean values for all probes located 200bp upstream of the TSS'
+        ' through the first exon of each gene.'
+    )
+
+    # a string which will make it obvious where the data has come from. For example, we can use
+    # this tag to name an output file produced by this class (e.g. the matrix of beta values).
+    # We also use this tag
+    TAG = 'tcga-promoter-methylation'
+
+    # An example of how one might query this dataset, so we can provide useful
+    # help for dataset creation errors:
+    EXAMPLE_PAYLOAD = {
+        'TCGA-UVM': ["<UUID>","<UUID>"],
+        'TCGA-MESO': ["<UUID>","<UUID>", "<UUID>"]
+    }
+
+    # a list of regions that define those we will aggregate over.
+    # Since this class concerns promoter methylation, we include
+    # regions close to the TSS. Note that the region annotations 
+    # are dependent on those in the probe-to-gene mapping file
+    TARGET_REGIONS = [
+        GDCMethylationDataSourceMixin.TSS_200,
+        GDCMethylationDataSourceMixin.FINAL_5PRIME_UTR,
+        GDCMethylationDataSourceMixin.FIRST_EXON
+    ]
+
+    def _post_process_betas(self, betas_df):
+        '''
+        Probe-level methylation matrices are exceptionally large and challenging to manage
+        within the confines of the WebMeV environment. This method performs aggregation to 
+        the gene level to reduce the size of the methylation matrices.
+
+        This method aggregates over `TARGET_REGIONS` which loosely define a promoter-like
+        region for each gene. Multiple probes are merged by the mean.
+        '''
+        return self._aggregate_probes(betas_df, self.TARGET_REGIONS)
+
+
+class TCGABodyMethylationDataSource(TCGAMethylationDataSource, GDCMethylationAggregationMixin):
+    '''
+    A specific implementation of the TCGA data source specific to
+    methylation data. This class performs an aggregation of gene body-level
+    beta values into gene-level values.
+    '''
+
+    # A short name (string) which can be used as a "title" for the dataset
+    PUBLIC_NAME = 'TCGA Methylation (Gene body)'
+
+    # A longer, more descriptive text explaining the datasource:
+    DESCRIPTION = ('TCGA methylation data as processed by the'
+        ' Genomic Data Commons'
+        ' <a href="https://docs.gdc.cancer.gov/Data/Bioinformatics_Pipelines/Methylation_Pipeline/">'
+        ' methylation array harmonization workflow</a>. Methylation "beta" values for CpG sites are'
+        ' produced by SeSAMe software. Following this, gene-level methylation values are found'
+        ' by calculating the mean values for all probes located downstream of the first exon.'
+    )
+
+    # a string which will make it obvious where the data has come from. For example, we can use
+    # this tag to name an output file produced by this class (e.g. the matrix of beta values).
+    # We also use this tag
+    TAG = 'tcga-body-methylation'
+
+    # An example of how one might query this dataset, so we can provide useful
+    # help for dataset creation errors:
+    EXAMPLE_PAYLOAD = {
+        'TCGA-UVM': ["<UUID>","<UUID>"],
+        'TCGA-MESO': ["<UUID>","<UUID>", "<UUID>"]
+    }
+
+    # a list of regions that define those we will aggregate over.
+    # Since this class concerns promoter methylation, we include
+    # regions close to the TSS. Note that the region annotations 
+    # are dependent on those in the probe-to-gene mapping file
+    TARGET_REGIONS = [
+        GDCMethylationDataSourceMixin.GENE_BODY,
+    ]
+
+    def _post_process_betas(self, betas_df):
+        '''
+        Probe-level methylation matrices are exceptionally large and challenging to manage
+        within the confines of the WebMeV environment. This method performs aggregation to 
+        the gene level to reduce the size of the methylation matrices.
+
+        This method aggregates over `TARGET_REGIONS` which loosely define a promoter-like
+        region for each gene. Multiple probes are merged by the mean.
+        '''
+        return self._aggregate_probes(betas_df, self.TARGET_REGIONS)

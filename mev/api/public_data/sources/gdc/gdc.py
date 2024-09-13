@@ -5,7 +5,6 @@ import shutil
 import os
 import requests
 import tarfile
-import uuid
 
 import pandas as pd
 
@@ -846,6 +845,113 @@ class GDCMethylationDataSourceMixin(MethylationMixin):
         }
     ]
 
+    # The GDC-based files for methylation use the Human Methylation 450k chip whose annotation is here:
+    PROBE_ANN_FILE = 'https://webdata.illumina.com/downloads/productfiles/humanmethylation450/humanmethylation450_15017482_v1-2.csv'
+
+    # To consistently refer to constants in the `PROBE_ANN_FILE` above. Also
+    # used for reference when selecting available features
+    PROBE_ID = 'probe_id'
+    GENE_ID = 'gene_id'
+    FEATURE_COL = 'feature'
+    ORIG_5PRIME_UTR = "5'UTR"
+    ORIG_3PRIME_UTR = "3'UTR"
+    FINAL_5PRIME_UTR = "5p_UTR"
+    FINAL_3PRIME_UTR = "3p_UTR"
+    TSS_1500 = 'TSS1500'
+    TSS_200 = 'TSS200'
+    FIRST_EXON = '1stExon'
+    GENE_BODY = 'Body' 
+    GENIC_FEATURE_SET = [
+        TSS_1500,
+        TSS_200,
+        FIRST_EXON,
+        FINAL_3PRIME_UTR,
+        FINAL_5PRIME_UTR,
+        GENE_BODY
+    ]
+
+    @staticmethod
+    def _extract_probe_feature_mapping(row):
+        """
+        Used for munging data from the `PROBE_ANN_FILE`
+        Takes a row from the the dataframe (a pd.Series) and
+        returns a dataframe containing only the required information.
+
+        As an example, a row could look like:
+        IlmnID                                                          cg27416437
+        ...                                                                    ...
+        UCSC_RefGene_Name        EWSR1;EWSR1;EWSR1;EWSR1;RHBDD3;EWSR1;EWSR1;EWS...
+        UCSC_RefGene_Accession   NM_001163286;NM_013986;NM_001163286;NM_0011632...
+        UCSC_RefGene_Group       5'UTR;5'UTR;1stExon;1stExon;TSS200;1stExon;5'U...
+        ...                                                                    ...
+        Enhancer                                                               NaN
+        ...                                                                    ...
+
+        and we return a dataframe that looks like:
+        probe          gene       feature        enhancer
+        cg27416437     EWSR1      1stExon        NaN
+        cg27416437     EWSR1      5'UTR          NaN
+        cg27416437     RHBDD3     TSS200         NaN
+        """
+
+        # locally-scoped function used below to parse the records
+        def parse_delim(s):
+            if pd.isna(s):
+                return None
+            return [x.strip() for x in s.split(';')]
+
+        # locally-scoped function used to re-map the genic locations
+        # to avoid potential parsing issues
+        def feature_mapping(x):
+            """
+            This function is used to re-code
+            the feature identifiers (e.g. TSS200, 5'UTR)
+            to another identifer as desired.
+            """
+            if x == GDCMethylationDataSourceMixin.ORIG_5PRIME_UTR:
+                return GDCMethylationDataSourceMixin.FINAL_5PRIME_UTR
+            elif x == GDCMethylationDataSourceMixin.ORIG_3PRIME_UTR:
+                return GDCMethylationDataSourceMixin.FINAL_3PRIME_UTR
+            else:
+                return x
+
+        probe_id = row['IlmnID']
+        gene_list = parse_delim(row['UCSC_RefGene_Name'])
+        group_list = parse_delim(row['UCSC_RefGene_Group'])
+        if group_list is not None:
+            group_list = [feature_mapping(x) for x in group_list]
+        try:
+            if gene_list is not None:
+                df = pd.DataFrame({
+                    GDCMethylationDataSourceMixin.GENE_ID: gene_list, 
+                    GDCMethylationDataSourceMixin.FEATURE_COL: group_list
+                })
+            else:
+                return None
+        except Exception as ex:
+            logger.error(f'Unexpected entry for probe {probe_id}:')
+            logger.error(row)
+            raise ex
+        df.drop_duplicates(inplace=True)
+        df[GDCMethylationDataSourceMixin.PROBE_ID] = probe_id
+        return df
+    
+    @staticmethod
+    def _prepare_mapping(target_regions):
+        '''
+        Parses the probe-mapping file (reformatting for ease)
+        and restricts to genic regions in `target_regions`
+        '''
+        mapping_df = pd.read_csv(GDCMethylationDataSourceMixin.PROBE_ANN_FILE, skiprows=7)
+        mapping_df = mapping_df.apply(GDCMethylationDataSourceMixin._extract_probe_feature_mapping, axis=1)
+        mapping_df = pd.concat(mapping_df.tolist())
+
+        # filter to keep only those features which we are requesting via `target_regions`
+        mapping_df = mapping_df.loc[
+            mapping_df[GDCMethylationDataSourceMixin.FEATURE_COL].isin(target_regions)
+        ]
+        return mapping_df.reset_index(drop=True)
+
     def _pull_data(self, program_id, tag):
         '''
         Method for downloading and munging an methylation dataset
@@ -876,6 +982,8 @@ class GDCMethylationDataSourceMixin(MethylationMixin):
             for project_id in project_dict.keys():
                 logger.info('Pull data for %s' % project_id)
                 ann_df, betas_df = self._download_cohort(project_id, data_fields)
+
+                betas_df = self._post_process_betas(betas_df)
 
                 # In some cases there can be duplicate IDs in the columns. In principle, this should NOT
                 # happen (since aliquots are supposed to be unique), but some TARGET datasets contain
@@ -1225,3 +1333,29 @@ class GDCMethylationDataSourceMixin(MethylationMixin):
         # use the base class to verify that all the necessary files
         # are there
         self.check_file_dict(file_dict)
+
+
+class GDCMethylationAggregationMixin(object):
+
+    def _aggregate_probes(self, betas_df, target_regions):
+        '''
+        Probe-level methylation matrices are exceptionally large and challenging to manage
+        within the confines of the WebMeV environment. This method performs aggregation to 
+        the gene level to reduce the size of the methylation matrices.
+
+        This method aggregates over `target_regions` which defines a list of
+        desired regions for each gene. Multiple probes are merged by the mean.
+        '''
+        mapping_df = GDCMethylationDataSourceMixin._prepare_mapping(target_regions)
+        merged_df = pd.merge(mapping_df,
+                         betas_df,
+                         how='inner',
+                         left_on=GDCMethylationDataSourceMixin.PROBE_ID,
+                         right_index=True)
+        keep_cols = [GDCMethylationDataSourceMixin.GENE_ID] + list(betas_df.columns)
+        merged_df = merged_df[keep_cols]
+
+        # we now need to apply the requested aggregation strategy. In general,
+        # we have >=1 rows for each gene
+        merged_df = merged_df.groupby(GDCMethylationDataSourceMixin.GENE_ID).agg('mean')
+        return merged_df

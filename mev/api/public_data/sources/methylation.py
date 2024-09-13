@@ -62,7 +62,7 @@ class MethylationMixin(object):
         - a list of resource types
         - a list of the formats
         '''
-        # Look at the database object to get the path for the count matrix
+        # Look at the database object to get the path for the beta matrix
         file_mapping = database_record.file_mapping
         beta_matrix_path = file_mapping[self.BETAS_FILE_KEY][0]
         if not os.path.exists(beta_matrix_path):
@@ -191,3 +191,11 @@ class MethylationMixin(object):
                 [betas_matrix_name, ann_name], \
                 [MATRIX_KEY, ANNOTATION_TABLE_KEY], \
                 [TSV_FORMAT,TSV_FORMAT]
+
+    def _post_process_betas(self, betas_df):
+        '''
+        Provides a dummy method that can be overrode
+        if more specific class implementations choose to aggregate
+        probe-level methylation data at e.g. at the gene level
+        '''
+        return betas_df

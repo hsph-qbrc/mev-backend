@@ -21,12 +21,16 @@ from api.public_data import DATASETS, \
 from api.models import PublicDataset, Resource
 from api.public_data.sources.base import PublicDataSource
 from api.public_data.sources.gdc.gdc import GDCDataSource, \
-    GDCRnaSeqDataSourceMixin
+    GDCRnaSeqDataSourceMixin, \
+    GDCMethylationDataSourceMixin, \
+    GDCMethylationAggregationMixin
 from api.public_data.sources.rnaseq import RnaSeqMixin
 from api.public_data.sources.methylation import MethylationMixin
 from api.public_data.sources.gdc.tcga import TCGADataSource, \
     TCGAMicroRnaSeqDataSource, \
-    TCGAMethylationDataSource
+    TCGAMethylationDataSource, \
+    TCGABodyMethylationDataSource, \
+    TCGAPromoterMethylationDataSource  
 from api.public_data.sources.gdc.target import TargetDataSource
 from api.public_data.sources.gtex_rnaseq import GtexRnaseqDataSource
 from api.public_data.indexers.solr import SolrIndexer
@@ -1570,3 +1574,237 @@ class TestTCGAMethylation(BaseAPITestCase):
         data_src.ROOT_DIR = '/tmp'
         actual_df = data_src._merge_downloaded_archives(archives, file_to_aliquot_mapping)
         self.assertTrue(expected_matrix.equals(actual_df))
+
+
+class TestGDCMethylationDataSourceMixin(BaseAPITestCase):
+
+    def test_parses_hm450_probe_mapping(self):
+        '''
+        Given a truncated example of the HM450k probe
+        annotation file, assert that it has the expected
+        format after we pre-process it.
+        '''
+        # by default, this member refers to a url which is downloaded
+        # and parsed. Here we have a shorter version of the same file
+        fp = os.path.join(THIS_DIR, 'public_data_test_files', 'example_probes.csv')
+        GDCMethylationDataSourceMixin.PROBE_ANN_FILE = fp
+
+        # return all regions:
+        target_regions = GDCMethylationDataSourceMixin.GENIC_FEATURE_SET
+        result = GDCMethylationDataSourceMixin._prepare_mapping(target_regions)
+        expected_result = pd.DataFrame([
+            ['EWSR1',   '5p_UTR',  'cg27416437'],
+            ['EWSR1',  '1stExon',  'cg27416437'],
+            ['RHBDD3',   'TSS200',  'cg27416437'],
+            ['ZCCHC12',   'TSS200',  'cg00018261'],
+            ['TSPY4',     'Body',  'cg00050873'],
+            ['FAM197Y2',  'TSS1500',  'cg00050873'],
+        ], columns=['gene_id','feature','probe_id'])
+        self.assertTrue(result.equals(expected_result))
+
+        target_regions = [GDCMethylationDataSourceMixin.GENE_BODY]
+        result = GDCMethylationDataSourceMixin._prepare_mapping(target_regions)
+        expected_result = pd.DataFrame([
+            ['TSPY4',     'Body',  'cg00050873'],
+        ], columns=['gene_id','feature','probe_id'])
+        self.assertTrue(result.equals(expected_result))
+
+        target_regions = [
+            GDCMethylationDataSourceMixin.GENE_BODY, 
+            GDCMethylationDataSourceMixin.TSS_200
+        ]
+        result = GDCMethylationDataSourceMixin._prepare_mapping(target_regions)
+        expected_result = pd.DataFrame([
+            ['RHBDD3',   'TSS200',  'cg27416437'],
+            ['ZCCHC12',   'TSS200',  'cg00018261'],
+            ['TSPY4',     'Body',  'cg00050873'],
+        ], columns=['gene_id','feature','probe_id'])
+        self.assertTrue(result.equals(expected_result))
+
+class TestAggregatedGDCMethylation(BaseAPITestCase):
+
+    def setUp(self):
+        # create a mock probe-to-gene mapping
+        self.mapping = pd.DataFrame(
+            [
+                ['cg0', 'TSS200', 'gA'],
+                ['cg1', '5p_UTR', 'gA'],
+                ['cg2', 'Body', 'gA'],
+                ['cg3', 'Body', 'gB'],
+                ['cg4', 'Body', 'gB'],
+                ['cg5', 'Body', 'gB'],
+                ['cg6', 'TSS200', 'gC'],
+                ['cg7', '1stExon', 'gC'],
+                ['cg8', 'Body', 'gC'],
+            ],
+            columns=[
+                GDCMethylationDataSourceMixin.PROBE_ID, 
+                GDCMethylationDataSourceMixin.FEATURE_COL,
+                GDCMethylationDataSourceMixin.GENE_ID
+            ]
+        )
+
+        # create a probe-level matrix
+        probe_vals = [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9],
+            [0.11, 0.21, 0.31],
+            [0.41, 0.51, 0.61],
+            [0.71, 0.81, 0.91],
+            [0.12, 0.22, 0.32],
+            [0.42, 0.52, 0.62],
+            [0.72, 0.82, 0.92],
+        ]
+        self.probe_df = pd.DataFrame(
+            probe_vals,
+            index=[f'cg{x}' for x in range(9)],
+            columns=['sA','sB','sC']
+        )
+
+    @mock.patch('api.public_data.sources.gdc.gdc.GDCMethylationDataSourceMixin')
+    def test_aggregation(self, mock_GDCMethylationDataSourceMixin):
+        mock_GDCMethylationDataSourceMixin.PROBE_ID = 'probe_id'
+        mock_GDCMethylationDataSourceMixin.GENE_ID = 'gene_id'
+
+        # in our setup, this doesn't actually aggregate since gA and gC both have
+        # only a single probe in TSS200 region
+        target_features = ['TSS200']
+        mapping = self.mapping.loc[
+            self.mapping[GDCMethylationDataSourceMixin.FEATURE_COL].isin(target_features)]
+        mock_GDCMethylationDataSourceMixin._prepare_mapping.return_value = mapping
+        mixin_obj = GDCMethylationAggregationMixin()
+        result = mixin_obj._aggregate_probes(self.probe_df, target_features)
+        expected_result = pd.DataFrame(
+            [
+                [0.1, 0.2, 0.3],
+                [0.12, 0.22, 0.32]
+            ],
+            index=['gA', 'gC'],
+            columns=['sA','sB','sC']
+        )
+        self.assertTrue(result.equals(expected_result))
+
+        # gA and gC both have TSS200; gA has a 5'UTR; gC has a 1st exon
+        # This will involve getting the mean of those multiple probes
+        target_features = ['TSS200', '5p_UTR', '1stExon']
+        mapping = self.mapping.loc[
+            self.mapping[GDCMethylationDataSourceMixin.FEATURE_COL].isin(target_features)]
+        mock_GDCMethylationDataSourceMixin._prepare_mapping.return_value = mapping
+        mixin_obj = GDCMethylationAggregationMixin()
+        result = mixin_obj._aggregate_probes(self.probe_df, target_features)
+        expected_result = pd.DataFrame(
+            [
+                [0.25, 0.35, 0.45],
+                [0.27, 0.37, 0.47]
+            ],
+            index=['gA', 'gC'],
+            columns=['sA','sB','sC'],
+            
+        )
+        self.assertTrue(np.allclose(result.values, expected_result.values))
+
+        # gA and gC both have only a single probe in the body; 
+        # gB has three
+        # This will involve getting the mean of those multiple probes
+        target_features = ['Body']
+        mapping = self.mapping.loc[
+            self.mapping[GDCMethylationDataSourceMixin.FEATURE_COL].isin(target_features)]
+        mock_GDCMethylationDataSourceMixin._prepare_mapping.return_value = mapping
+        mixin_obj = GDCMethylationAggregationMixin()
+        result = mixin_obj._aggregate_probes(self.probe_df, target_features)
+        expected_result = pd.DataFrame(
+            [
+                [0.7, 0.8, 0.9],
+                [0.41, 0.51, 0.61],
+                [0.72, 0.82, 0.92]
+            ],
+            index=['gA', 'gB', 'gC'],
+            columns=['sA','sB','sC'],
+            
+        )
+        self.assertTrue(np.allclose(result.values, expected_result.values))
+
+class TestTCGABodyMethylationDataSource(BaseAPITestCase):
+
+    def test_agg(self):
+        fp = os.path.join(THIS_DIR, 'public_data_test_files', 'example_probes.csv')
+        GDCMethylationDataSourceMixin.PROBE_ANN_FILE = fp
+        ds = TCGABodyMethylationDataSource()
+
+        # for this, we do a "full" test which includes
+        # parsing the mock HM450k annotation file. Hence,
+        # these mock probe vals and probe IDs need to align
+        # with that file.
+        probe_vals = [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9]
+        ]
+        probe_ids = [        
+            'cg27416437',
+            'cg00018261',
+            'cg00050873'
+        ]
+        probe_df = pd.DataFrame(
+            probe_vals,
+            index=probe_ids,
+            columns=['sA','sB','sC']
+        )
+        result = ds._post_process_betas(probe_df)
+
+        # the only body-based probe in our mock
+        # dataset is for TSPY4 (probe cg00050873)
+        expected_result = pd.DataFrame(
+            [
+                [0.7, 0.8, 0.9],
+            ],
+            index=['TSPY4'],
+            columns=['sA','sB','sC'],
+            
+        )
+        self.assertTrue(result.equals(expected_result))        
+
+
+class TestTCGAPromoterMethylationDataSource(BaseAPITestCase):
+
+    def test_agg(self):
+        fp = os.path.join(THIS_DIR, 'public_data_test_files', 'example_probes.csv')
+        GDCMethylationDataSourceMixin.PROBE_ANN_FILE = fp
+        ds = TCGAPromoterMethylationDataSource()
+
+        # for this, we do a "full" test which includes
+        # parsing the mock HM450k annotation file. Hence,
+        # these mock probe vals and probe IDs need to align
+        # with that file.
+        probe_vals = [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9]
+        ]
+        probe_ids = [        
+            'cg27416437',
+            'cg00018261',
+            'cg00050873'
+        ]
+        probe_df = pd.DataFrame(
+            probe_vals,
+            index=probe_ids,
+            columns=['sA','sB','sC']
+        )
+        result = ds._post_process_betas(probe_df)
+        
+        # the same probe covers both EWSR1 (5'UTR, 1st exon)
+        # and RHBDD3 (TSS200). Probe cg00018261 samples in 
+        # TSS200 of ZCCHC12
+        expected_result = pd.DataFrame(
+            [
+            [0.1, 0.2, 0.3],
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6]
+            ],
+            index=['EWSR1', 'RHBDD3', 'ZCCHC12'],
+            columns=['sA','sB','sC'],
+            
+        )
+        self.assertTrue(result.equals(expected_result)) 
