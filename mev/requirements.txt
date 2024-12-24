@@ -5,7 +5,7 @@ Django==5.0.3
 django-cors-headers==4.3.1
 django-debug-toolbar==4.3.0
 django-storages==1.14.2
-djangorestframework==3.15.0
+djangorestframework==3.15.2
 djangorestframework-simplejwt==5.3.1
 globus-sdk==3.39.0
 gunicorn==21.2.0
